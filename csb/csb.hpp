@@ -33305,6 +33305,7 @@ inline void swap(nlohmann::NLOHMANN_BASIC_JSON_TPL& j1, nlohmann::NLOHMANN_BASIC
 
 // CSP 1.0.0
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -33336,6 +33337,19 @@ inline void swap(nlohmann::NLOHMANN_BASIC_JSON_TPL& j1, nlohmann::NLOHMANN_BASIC
   #include <unistd.h>
 #endif
 
+#if defined(_MSC_VER) && defined(_M_X64)
+  #include <intrin.h>
+#elif defined(__x86_64__) && defined(__clang__)
+  #include <cpuid.h>
+  #include <nmmintrin.h>
+#elif defined(__x86_64__) && defined(__GNUC__)
+  #include <cpuid.h>
+  #pragma GCC push_options
+  #pragma GCC target("sse4.2")
+  #include <nmmintrin.h>
+  #pragma GCC pop_options
+#endif
+
 namespace csp
 {
   /*
@@ -33356,15 +33370,65 @@ namespace csp
   };
   static_assert(sizeof(header) == 32);
 
+  namespace detail
+  {
+    constexpr std::array<std::uint32_t, 256> make_crc32c_table()
+    {
+      std::array<std::uint32_t, 256> table{};
+      for (std::uint32_t entry{}; entry < 256; ++entry)
+      {
+        std::uint32_t value{entry};
+        for (int bit{}; bit < 8; ++bit) value = (value & 1u) ? (0x82F63B78u ^ (value >> 1)) : (value >> 1);
+        table[entry] = value;
+      }
+      return table;
+    }
+    inline constexpr std::array<std::uint32_t, 256> crc32c_table{make_crc32c_table()};
+
+    inline std::uint32_t crc32c_software(std::uint32_t crc, const unsigned char *bytes, std::size_t size)
+    {
+      for (std::size_t index{}; index < size; ++index) crc = crc32c_table[(crc ^ bytes[index]) & 0xFFu] ^ (crc >> 8);
+      return crc;
+    }
+#if defined(__GNUC__) || defined(__clang__)
+    __attribute__((target("sse4.2")))
+#endif
+    inline std::uint32_t crc32c_hardware(std::uint32_t crc, const unsigned char *bytes, std::size_t size)
+    {
+      std::uint64_t accumulator{crc};
+      std::size_t index{};
+      for (; index + 8 <= size; index += 8)
+      {
+        std::uint64_t chunk{};
+        std::memcpy(&chunk, bytes + index, sizeof(chunk));
+        accumulator = _mm_crc32_u64(accumulator, chunk);
+      }
+      std::uint32_t crc32{static_cast<std::uint32_t>(accumulator)};
+      for (; index < size; ++index) crc32 = _mm_crc32_u8(crc32, bytes[index]);
+      return crc32;
+    }
+    inline bool crc32c_supported()
+    {
+#if defined(_MSC_VER)
+      int registers[4]{};
+      __cpuid(registers, 1);
+      return (registers[2] & (1 << 20)) != 0;
+#else
+      unsigned int eax{}, ebx{}, ecx{}, edx{};
+      if (!__get_cpuid(1u, &eax, &ebx, &ecx, &edx)) return false;
+      return (ecx & (1u << 20)) != 0;
+#endif
+    }
+  }
+
   inline std::uint32_t fingerprint(const void *data, std::size_t size)
   {
     const auto *bytes{static_cast<const unsigned char *>(data)};
     std::uint32_t crc{0xFFFFFFFFu};
-    for (std::size_t index{}; index < size; ++index)
-    {
-      crc ^= bytes[index];
-      for (int bit{}; bit < 8; ++bit) crc = (crc >> 1) ^ ((crc & 1u) ? 0xEDB88320u : 0u);
-    }
+    if (detail::crc32c_supported())
+      crc = detail::crc32c_hardware(crc, bytes, size);
+    else
+      crc = detail::crc32c_software(crc, bytes, size);
     return ~crc;
   }
   inline std::uint64_t signature(const void *data, std::size_t size)
@@ -36829,7 +36893,7 @@ namespace csb
 
     if (host_platform == WINDOWS)
     {
-      std::string compile_debug_flags{target_configuration == RELEASE ? "/O2 " : "/Od /Zi /RTC1 "};
+      std::string compile_debug_flags{target_configuration == RELEASE ? "/O2 /bigobj " : "/Od /Zi /RTC1 /bigobj "};
       std::string runtime_library{target_linkage == STATIC ? (target_configuration == RELEASE ? "MT" : "MTd")
                                                            : (target_configuration == RELEASE ? "MD" : "MDd")};
       std::string compile_definitions{"/D_WIN32 "};
