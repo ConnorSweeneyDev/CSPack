@@ -6,7 +6,9 @@
 .opencode/
 
 # Build Output
-compile_commands.json
+build/
+.clang-format
+.clangd
 
 # User Files
 .env
