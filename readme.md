@@ -21,27 +21,26 @@ Append blobs in order, then serialise. `table` records the `(offset, size)` each
 matching patches for the mapper.
 ```cpp
 csp::pack pack;
-pack.append(vertex_bytes);
-pack.append(image_bytes);
-csp::write(pack, "Game.csp");
+pack.append(first_bytes);
+pack.append(second_bytes);
+csp::write(pack, "Data.csp");
 ```
 
 ### Mapper (Run-Time)
 Declare a manifest of patches; each points a span at a region of the file. Constructing the manifest registers it, then
-`mount()` maps the file, validates the header, and fills in every span. `directory` is the folder the file lives in (for
-example the application directory).
+`mount()` maps the file, validates the header, and fills in every span. `directory` is the folder the file lives in.
 ```cpp
 std::span<const unsigned char> first;
 std::span<const unsigned char> second;
 
 namespace csp
 {
-  constexpr std::uint64_t signature{/* the value written into the file by the build */};
+  constexpr std::uint64_t expected{/* The generated signature for the build */};
   const std::array<patch, 2> patches{{
     {&first, 32, 2036},
     {&second, 2080, 500000},
   }};
-  const manifest instance{"Data.csp", signature, patches};
+  const manifest instance{"Data.csp", expected, patches};
 }
 
 // At startup, before anything reads the spans to make them point straight at their regions of the file.
