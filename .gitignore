@@ -1,0 +1,12 @@
+# Development Output
+.cache/
+.vscode/
+.vs/
+.claude/
+.opencode/
+
+# Build Output
+compile_commands.json
+
+# User Files
+.env
