@@ -36291,14 +36291,33 @@ namespace csb
   inline void vcpkg_install(const std::string &vcpkg_version, const std::function<nlohmann::json()> &manifest)
   { vcpkg_install(vcpkg_version, manifest()); }
 
+  // The local vcpkg triplet for the active platform, architecture, linkage and configuration.
+  inline std::string vcpkg_triplet()
+  {
+    if (host_platform == WINDOWS)
+      return std::format("{}-windows{}{}", host_architecture, (target_linkage == STATIC ? "-static" : ""),
+                         (target_configuration == RELEASE ? "-release" : ""));
+    return std::format("{}-linux", host_architecture);
+  }
+  // The local vcpkg include directory for the active triplet.
+  inline std::filesystem::path vcpkg_include()
+  { return std::filesystem::path{"build"} / "vcpkg_installed" / vcpkg_triplet() / "include"; }
+  // The local vcpkg library directory for the active triplet.
+  inline std::filesystem::path vcpkg_library()
+  {
+    return std::filesystem::path{"build"} / "vcpkg_installed" / vcpkg_triplet() /
+           (target_configuration == RELEASE ? "lib" : std::filesystem::path{"debug"} / "lib");
+  }
+
   /**
    * Installs subprojects from given GitHub repositories at specified versions.
    *
    * This function's parameters behave as follows:
    * | `subproject`: A single tuple or list of tuples, each containing a GitHub repository name (in the format
-   *                 `owner/repo`), a version (tag), and an subproject type. If the type is a compiled library, the
-   *                 external_include_directories and library_directories are updated; if it is a header library, only
-   *                 external_include_directories are updated; if it is standalone, the PATH is updated.
+   *                 `owner/repo`), a version (tag), and an subproject type. Only the subproject's own build/include is
+   *                 added to external_include_directories; a compiled library additionally adds its own build output to
+   *                 library_directories; a standalone updates the PATH. Transitive dependencies (the subproject's vcpkg
+   *                 packages and nested subprojects) are NOT propagated; re-export anything consumers also need.
    *
    * See also: `file_install`, `archive_install`, `vcpkg_install`.
    */
@@ -36350,26 +36369,6 @@ namespace csb
       auto include_path{subproject_path / "build" / "include"};
       if (std::filesystem::exists(include_path) && std::filesystem::is_directory(include_path))
         external_include_directories.push_back(include_path);
-      auto vcpkg_path{subproject_path / "build" / "vcpkg_installed"};
-      if (std::filesystem::exists(vcpkg_path) && std::filesystem::is_directory(vcpkg_path))
-      {
-        std::string vcpkg_triplet{};
-        if (host_platform == WINDOWS)
-          vcpkg_triplet = std::format("{}-windows{}{}", host_architecture, (target_linkage == STATIC ? "-static" : ""),
-                                      (target_configuration == RELEASE ? "-release" : ""));
-        else if (host_platform == LINUX)
-          vcpkg_triplet = std::format("{}-linux", host_architecture);
-        auto vcpkg_include_directory{vcpkg_path / vcpkg_triplet / "include"};
-        auto vcpkg_library_directory{
-          vcpkg_path / vcpkg_triplet /
-          (target_configuration == RELEASE ? "lib" : std::filesystem::path{"debug"} / "lib")};
-        if (std::filesystem::exists(vcpkg_include_directory) && std::filesystem::is_directory(vcpkg_include_directory))
-          external_include_directories.push_back(vcpkg_include_directory);
-        if (subproject_type == COMPILED_LIBRARY)
-          if (std::filesystem::exists(vcpkg_library_directory) &&
-              std::filesystem::is_directory(vcpkg_library_directory))
-            library_directories.push_back(vcpkg_library_directory);
-      }
       if (subproject_type == COMPILED_LIBRARY) library_directories.push_back(build_path);
     }
   }
@@ -36377,16 +36376,29 @@ namespace csb
    * Installs subprojects from given GitHub repositories at specified versions.
    *
    * This function's parameters behave as follows:
-   * | `subprojects`: A single tuple or list of tuples, each containing a GitHub repository name (in the format
-   *                  `owner/repo`), a version (tag), and an subproject type. If the type is a compiled library, the
-   *                  external_include_directories and library_directories are updated; if it is a header library, only
-   *                  external_include_directories are updated; if it is standalone, the PATH is updated.
+   * | `subproject`: A single tuple or list of tuples, each containing a GitHub repository name (in the format
+   *                 `owner/repo`), a version (tag), and an subproject type. Only the subproject's own build/include is
+   *                 added to external_include_directories; a compiled library additionally adds its own build output to
+   *                 library_directories; a standalone updates the PATH. Transitive dependencies (the subproject's vcpkg
+   *                 packages and nested subprojects) are NOT propagated; re-export anything consumers also need.
    *
    * See also: `file_install`, `archive_install`, `vcpkg_install`.
    */
   inline void subproject_install(const std::vector<std::tuple<std::string, std::string, subproject>> &subprojects)
   {
     for (const auto &subproject : subprojects) subproject_install(subproject);
+  }
+
+  // The include directory of an installed subproject (name may be "owner/repo" or just "repo").
+  inline std::filesystem::path subproject_include(const std::string &name)
+  {
+    return std::filesystem::path{"build"} / "subproject" / name.substr(name.find('/') + 1) / "build" / "include";
+  }
+  // The library directory of an installed subproject (name may be "owner/repo" or just "repo").
+  inline std::filesystem::path subproject_library(const std::string &name)
+  {
+    return std::filesystem::path{"build"} / "subproject" / name.substr(name.find('/') + 1) / "build" /
+           (target_configuration == RELEASE ? "release" : "debug");
   }
 
   /**
