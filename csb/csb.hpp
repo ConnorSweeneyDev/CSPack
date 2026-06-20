@@ -36688,7 +36688,12 @@ namespace csb
       resources, checks);
   }
 
-  // Generates a compile_commands.json file for the current project.
+  /**
+   * Generates a compile_commands.json file for the current project.
+   *
+   * This function's parameters behave as follows:
+   * | `headers`: If true, will generate commands for each header file in addition to each source file.
+   */
   inline void generate_compile_commands(const bool headers = false)
   {
     if (source_files.empty() && !headers) throw std::runtime_error("No source files to generate compile commands for.");
