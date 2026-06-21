@@ -33370,6 +33370,18 @@ namespace csp
   };
   static_assert(sizeof(header) == 32);
 
+  inline std::uint64_t signature(const void *data, std::size_t size)
+  {
+    const auto *bytes{static_cast<const unsigned char *>(data)};
+    std::uint64_t hash{14695981039346656037ull};
+    for (std::size_t index{}; index < size; ++index)
+    {
+      hash ^= bytes[index];
+      hash *= 1099511628211ull;
+    }
+    return hash;
+  }
+
   namespace detail
   {
     constexpr std::array<std::uint32_t, 256> make_crc32c_table()
@@ -33420,7 +33432,6 @@ namespace csp
 #endif
     }
   }
-
   inline std::uint32_t fingerprint(const void *data, std::size_t size)
   {
     const auto *bytes{static_cast<const unsigned char *>(data)};
@@ -33430,17 +33441,6 @@ namespace csp
     else
       crc = detail::crc32c_software(crc, bytes, size);
     return ~crc;
-  }
-  inline std::uint64_t signature(const void *data, std::size_t size)
-  {
-    const auto *bytes{static_cast<const unsigned char *>(data)};
-    std::uint64_t hash{14695981039346656037ull};
-    for (std::size_t index{}; index < size; ++index)
-    {
-      hash ^= bytes[index];
-      hash *= 1099511628211ull;
-    }
-    return hash;
   }
 
   /*
@@ -33496,13 +33496,24 @@ namespace csp
     std::uint64_t offset;
     std::uint64_t size;
   };
-  struct manifest
+  struct registration
   {
-    manifest(const char *path, std::uint64_t signature, std::span<const patch> patches);
     const char *path;
     std::uint64_t signature;
     std::span<const patch> patches;
   } inline const *registered{};
+  template <std::size_t count> struct manifest : registration
+  {
+    std::array<patch, count> storage;
+    manifest(const char *path_, std::uint64_t signature_, const std::array<patch, count> &patches_) : storage{patches_}
+    {
+      path = path_;
+      signature = signature_;
+      patches = storage;
+      registered = this;
+    }
+  };
+
   class mapping
   {
   public:
@@ -33519,10 +33530,6 @@ namespace csp
     const unsigned char *data{};
     std::size_t length{};
   } inline current{};
-
-  inline manifest::manifest(const char *path_, std::uint64_t signature_, std::span<const patch> patches_)
-    : path{path_}, signature{signature_}, patches{patches_}
-  { registered = this; }
 
   inline mapping::~mapping()
   {
@@ -33546,13 +33553,13 @@ namespace csp
       CloseHandle(handle);
       throw std::runtime_error("Failed to size csp file '" + file.string() + "'");
     }
-    void *map{CreateFileMappingW(handle, nullptr, PAGE_READONLY, 0, 0, nullptr)};
+    void *map{CreateFileMappingW(handle, nullptr, PAGE_WRITECOPY, 0, 0, nullptr)};
     if (!map)
     {
       CloseHandle(handle);
       throw std::runtime_error("Failed to map csp file '" + file.string() + "'");
     }
-    void *view{MapViewOfFile(map, FILE_MAP_READ, 0, 0, 0)};
+    void *view{MapViewOfFile(map, FILE_MAP_COPY, 0, 0, 0)};
     CloseHandle(map);
     CloseHandle(handle);
     if (!view) throw std::runtime_error("Failed to view csp file '" + file.string() + "'");
