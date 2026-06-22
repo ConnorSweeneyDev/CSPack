@@ -9,7 +9,6 @@
 #include <filesystem>
 #include <fstream>
 #include <ios>
-#include <span>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -45,6 +44,10 @@
   #pragma GCC target("sse4.2")
   #include <nmmintrin.h>
   #pragma GCC pop_options
+#endif
+
+#if (defined(_MSC_VER) && defined(_M_X64)) || (defined(__x86_64__) && (defined(__clang__) || defined(__GNUC__)))
+  #define CSP_HARDWARE_CRC32C
 #endif
 
 namespace csp
@@ -99,9 +102,10 @@ namespace csp
       for (std::size_t index{}; index < size; ++index) crc = crc32c_table[(crc ^ bytes[index]) & 0xFFu] ^ (crc >> 8);
       return crc;
     }
-#if defined(__GNUC__) || defined(__clang__)
+#ifdef CSP_HARDWARE_CRC32C
+  #if defined(__GNUC__) || defined(__clang__)
     __attribute__((target("sse4.2")))
-#endif
+  #endif
     inline std::uint32_t crc32c_hardware(std::uint32_t crc, const unsigned char *bytes, std::size_t size)
     {
       std::uint64_t accumulator{crc};
@@ -118,24 +122,27 @@ namespace csp
     }
     inline bool crc32c_supported()
     {
-#if defined(_MSC_VER)
+  #if defined(_MSC_VER)
       int registers[4]{};
       __cpuid(registers, 1);
       return (registers[2] & (1 << 20)) != 0;
-#else
+  #else
       unsigned int eax{}, ebx{}, ecx{}, edx{};
       if (!__get_cpuid(1u, &eax, &ebx, &ecx, &edx)) return false;
       return (ecx & (1u << 20)) != 0;
-#endif
+  #endif
     }
+#endif
   }
   inline std::uint32_t fingerprint(const void *data, std::size_t size)
   {
     const auto *bytes{static_cast<const unsigned char *>(data)};
     std::uint32_t crc{0xFFFFFFFFu};
+#ifdef CSP_HARDWARE_CRC32C
     if (detail::crc32c_supported())
       crc = detail::crc32c_hardware(crc, bytes, size);
     else
+#endif
       crc = detail::crc32c_software(crc, bytes, size);
     return ~crc;
   }
@@ -184,33 +191,10 @@ namespace csp
 
   /*
    Mapper (Run-Time)
-   The application declares a manifest of patches: each patch points a span at a region of the mapped file. mount() maps
-   the file, validates the header, and fills in every span. Constructing a manifest registers it for the next mount().
+   mount() maps the file at a known path, validates its header against the build-time signature, and exposes the mapped
+   region through `current`. Consumers resolve their own spans lazily against `current.base()` rather than being
+   patched. The mapping is read-only; consumers treat it as immutable bytes and copy anything they need to keep.
   */
-  struct patch
-  {
-    std::span<const unsigned char> *target;
-    std::uint64_t offset;
-    std::uint64_t size;
-  };
-  struct registration
-  {
-    const char *path;
-    std::uint64_t signature;
-    std::span<const patch> patches;
-  } inline const *registered{};
-  template <std::size_t count> struct manifest : registration
-  {
-    std::array<patch, count> storage;
-    manifest(const char *path_, std::uint64_t signature_, const std::array<patch, count> &patches_) : storage{patches_}
-    {
-      path = path_;
-      signature = signature_;
-      patches = storage;
-      registered = this;
-    }
-  };
-
   class mapping
   {
   public:
@@ -250,13 +234,13 @@ namespace csp
       CloseHandle(handle);
       throw std::runtime_error("Failed to size csp file '" + file.string() + "'");
     }
-    void *map{CreateFileMappingW(handle, nullptr, PAGE_WRITECOPY, 0, 0, nullptr)};
+    void *map{CreateFileMappingW(handle, nullptr, PAGE_READONLY, 0, 0, nullptr)};
     if (!map)
     {
       CloseHandle(handle);
       throw std::runtime_error("Failed to map csp file '" + file.string() + "'");
     }
-    void *view{MapViewOfFile(map, FILE_MAP_COPY, 0, 0, 0)};
+    void *view{MapViewOfFile(map, FILE_MAP_READ, 0, 0, 0)};
     CloseHandle(map);
     CloseHandle(handle);
     if (!view) throw std::runtime_error("Failed to view csp file '" + file.string() + "'");
@@ -279,11 +263,9 @@ namespace csp
 #endif
   }
 
-  inline void mount(const std::filesystem::path &directory)
+  inline void mount(const std::filesystem::path &directory, const char *name, std::uint64_t signature)
   {
-    if (!registered) return;
-
-    const std::filesystem::path file{directory / registered->path};
+    const std::filesystem::path file{directory / name};
     current.open(file);
 
     const unsigned char *base{current.base()};
@@ -293,14 +275,11 @@ namespace csp
       throw std::runtime_error("Csp file '" + file.string() + "' is not a csp file");
     if (head.version != version)
       throw std::runtime_error("Csp file '" + file.string() + "' has an unsupported version");
-    if (head.signature != registered->signature)
+    if (head.signature != signature)
       throw std::runtime_error("Csp file '" + file.string() + "' does not match this build");
     if (current.size() != sizeof(header) + head.size)
       throw std::runtime_error("Csp file '" + file.string() + "' has an unexpected size");
     if (csp::fingerprint(base + sizeof(header), head.size) != head.fingerprint)
       throw std::runtime_error("Csp file '" + file.string() + "' is corrupted");
-
-    for (const auto &entry : registered->patches)
-      *entry.target = std::span<const unsigned char>{base + entry.offset, entry.size};
   }
 }
