@@ -1,5 +1,5 @@
 # CSPack
-A single-header library defining the csp format: a packed, memory-mappable container of blobs.
+A single-header library defining the CSP file format: a packed, memory-mappable container of blobs.
 
 ## Format
 ```
