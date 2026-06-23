@@ -33754,7 +33754,7 @@ namespace csp
   }
 }
 
-// CSB 2.3.0
+// CSB 2.3.1
 
 #include <algorithm>
 #include <array>
@@ -33942,7 +33942,7 @@ namespace csb
       std::string name{};
       std::pair<unsigned int, unsigned int> range{};
       std::vector<double> times{};
-      std::vector<std::unordered_map<std::string, std::array<double, 4>>> hitboxes{};
+      std::vector<std::unordered_map<std::string, std::vector<std::array<double, 4>>>> hitboxes{};
     };
     std::vector<std::byte> data{};
     unsigned int width{};
@@ -34754,6 +34754,183 @@ namespace csb
                           }
                           return pixels;
                         }};
+      const auto decompose{
+        [&](const cel_info &cel, const std::vector<unsigned char> &pixels) -> std::vector<std::array<double, 4>>
+        {
+          const int width{static_cast<int>(cel.width)};
+          const int height{static_cast<int>(cel.height)};
+          std::vector<unsigned char> mask(static_cast<std::size_t>(width) * height);
+          for (int pixel{}; pixel < width * height; ++pixel)
+            mask[static_cast<std::size_t>(pixel)] = pixels[static_cast<std::size_t>(pixel) * 4 + 3] != 0 ? 1 : 0;
+          const auto solid{[&](int x, int y)
+                           { return x >= 0 && y >= 0 && x < width && y < height &&
+                                    mask[static_cast<std::size_t>(y) * width + x] != 0; }};
+
+          struct corner
+          {
+            int x, y;
+            bool up;
+          };
+          const int lattice_height{height + 1};
+          std::vector<int> at(static_cast<std::size_t>(width + 1) * lattice_height, -1);
+          std::vector<corner> corners{};
+          for (int y{}; y <= height; ++y)
+            for (int x{}; x <= width; ++x)
+            {
+              const bool tl{solid(x - 1, y - 1)}, tr{solid(x, y - 1)}, bl{solid(x - 1, y)}, br{solid(x, y)};
+              if (tl + tr + bl + br != 3) continue;
+              at[static_cast<std::size_t>(x) * lattice_height + y] = static_cast<int>(corners.size());
+              corners.push_back({x, y, !bl || !br});
+            }
+
+          struct chord
+          {
+            int line, lo, hi, a, b;
+          };
+          std::vector<chord> horizontal{}, vertical{};
+          for (int y{}; y <= height; ++y)
+            for (int c{}; c < width;)
+            {
+              if (!(solid(c, y - 1) && solid(c, y))) { ++c; continue; }
+              const int lo{c};
+              while (c < width && solid(c, y - 1) && solid(c, y)) ++c;
+              const int a{at[static_cast<std::size_t>(lo) * lattice_height + y]};
+              const int b{at[static_cast<std::size_t>(c) * lattice_height + y]};
+              if (a >= 0 && b >= 0) horizontal.push_back({y, lo, c, a, b});
+            }
+          for (int x{}; x <= width; ++x)
+            for (int r{}; r < height;)
+            {
+              if (!(solid(x - 1, r) && solid(x, r))) { ++r; continue; }
+              const int lo{r};
+              while (r < height && solid(x - 1, r) && solid(x, r)) ++r;
+              const int a{at[static_cast<std::size_t>(x) * lattice_height + lo]};
+              const int b{at[static_cast<std::size_t>(x) * lattice_height + r]};
+              if (a >= 0 && b >= 0) vertical.push_back({x, lo, r, a, b});
+            }
+
+          const int nh{static_cast<int>(horizontal.size())}, nv{static_cast<int>(vertical.size())};
+          std::vector<std::vector<int>> conflicts(static_cast<std::size_t>(nh));
+          for (int i{}; i < nh; ++i)
+            for (int j{}; j < nv; ++j)
+            {
+              const int a{horizontal[static_cast<std::size_t>(i)].lo}, b{horizontal[static_cast<std::size_t>(i)].hi};
+              const int y{horizontal[static_cast<std::size_t>(i)].line};
+              const int x{vertical[static_cast<std::size_t>(j)].line};
+              const int c{vertical[static_cast<std::size_t>(j)].lo}, d{vertical[static_cast<std::size_t>(j)].hi};
+              const bool cross{a < x && x < b && c < y && y < d};
+              const bool share{(x == a || x == b) && (y == c || y == d)};
+              if (cross || share) conflicts[static_cast<std::size_t>(i)].push_back(j);
+            }
+
+          std::vector<int> match_h(static_cast<std::size_t>(nh), -1), match_v(static_cast<std::size_t>(nv), -1);
+          std::vector<unsigned char> seen(static_cast<std::size_t>(nv));
+          const std::function<bool(int)> augment{
+            [&](int h) -> bool
+            {
+              for (const int v : conflicts[static_cast<std::size_t>(h)])
+              {
+                if (seen[static_cast<std::size_t>(v)]) continue;
+                seen[static_cast<std::size_t>(v)] = 1;
+                if (match_v[static_cast<std::size_t>(v)] < 0 || augment(match_v[static_cast<std::size_t>(v)]))
+                {
+                  match_v[static_cast<std::size_t>(v)] = h;
+                  match_h[static_cast<std::size_t>(h)] = v;
+                  return true;
+                }
+              }
+              return false;
+            }};
+          for (int h{}; h < nh; ++h)
+          {
+            std::fill(seen.begin(), seen.end(), static_cast<unsigned char>(0));
+            augment(h);
+          }
+          std::vector<unsigned char> visited_h(static_cast<std::size_t>(nh)), visited_v(static_cast<std::size_t>(nv));
+          const std::function<void(int)> mark{
+            [&](int h)
+            {
+              visited_h[static_cast<std::size_t>(h)] = 1;
+              for (const int v : conflicts[static_cast<std::size_t>(h)])
+              {
+                if (visited_v[static_cast<std::size_t>(v)]) continue;
+                visited_v[static_cast<std::size_t>(v)] = 1;
+                const int next{match_v[static_cast<std::size_t>(v)]};
+                if (next >= 0 && !visited_h[static_cast<std::size_t>(next)]) mark(next);
+              }
+            }};
+          for (int h{}; h < nh; ++h)
+            if (match_h[static_cast<std::size_t>(h)] < 0 && !visited_h[static_cast<std::size_t>(h)]) mark(h);
+
+          std::vector<unsigned char> vertical_wall(static_cast<std::size_t>(width + 1) * height, 0);
+          std::vector<unsigned char> horizontal_wall(static_cast<std::size_t>(width) * (height + 1), 0);
+          const auto vwall{[&](int x, int r) -> unsigned char &
+                           { return vertical_wall[static_cast<std::size_t>(x) * height + r]; }};
+          const auto hwall{[&](int c, int y) -> unsigned char &
+                           { return horizontal_wall[static_cast<std::size_t>(c) * (height + 1) + y]; }};
+          std::vector<unsigned char> resolved(corners.size(), 0);
+          for (int i{}; i < nh; ++i)
+            if (visited_h[static_cast<std::size_t>(i)])
+            {
+              const chord &ch{horizontal[static_cast<std::size_t>(i)]};
+              for (int c{ch.lo}; c < ch.hi; ++c) hwall(c, ch.line) = 1;
+              resolved[static_cast<std::size_t>(ch.a)] = resolved[static_cast<std::size_t>(ch.b)] = 1;
+            }
+          for (int j{}; j < nv; ++j)
+            if (!visited_v[static_cast<std::size_t>(j)])
+            {
+              const chord &ch{vertical[static_cast<std::size_t>(j)]};
+              for (int r{ch.lo}; r < ch.hi; ++r) vwall(ch.line, r) = 1;
+              resolved[static_cast<std::size_t>(ch.a)] = resolved[static_cast<std::size_t>(ch.b)] = 1;
+            }
+          for (std::size_t k{}; k < corners.size(); ++k)
+          {
+            if (resolved[k]) continue;
+            const int x{corners[k].x};
+            if (corners[k].up)
+              for (int r{corners[k].y - 1}; r >= 0; --r)
+              {
+                if (!solid(x - 1, r) || !solid(x, r) || vwall(x, r)) break;
+                vwall(x, r) = 1;
+                if (hwall(x - 1, r) || hwall(x, r)) break;
+              }
+            else
+              for (int r{corners[k].y}; r < height; ++r)
+              {
+                if (!solid(x - 1, r) || !solid(x, r) || vwall(x, r)) break;
+                vwall(x, r) = 1;
+                if (hwall(x - 1, r + 1) || hwall(x, r + 1)) break;
+              }
+          }
+
+          std::vector<unsigned char> covered(static_cast<std::size_t>(width) * height, 0);
+          const auto cover{[&](int x, int y) -> unsigned char &
+                           { return covered[static_cast<std::size_t>(y) * width + x]; }};
+          std::vector<std::array<double, 4>> rectangles{};
+          for (int row{}; row < height; ++row)
+            for (int column{}; column < width; ++column)
+            {
+              if (!solid(column, row) || cover(column, row)) continue;
+              int right{column + 1};
+              while (right < width && solid(right, row) && !cover(right, row) && !vwall(right, row)) ++right;
+              int bottom{row + 1};
+              while (bottom < height)
+              {
+                bool ok{true};
+                for (int c{column}; c < right && ok; ++c)
+                  if (!solid(c, bottom) || cover(c, bottom) || hwall(c, bottom)) ok = false;
+                for (int c{column + 1}; c < right && ok; ++c)
+                  if (vwall(c, bottom)) ok = false;
+                if (!ok) break;
+                ++bottom;
+              }
+              for (int r{row}; r < bottom; ++r)
+                for (int c{column}; c < right; ++c) cover(c, r) = 1;
+              rectangles.push_back({static_cast<double>(cel.x + column), static_cast<double>(cel.y + row),
+                                    static_cast<double>(cel.x + right), static_cast<double>(cel.y + bottom)});
+            }
+          return rectangles;
+        }};
 
       const unsigned int frame_width{canvas_width}, frame_height{canvas_height};
       const unsigned int width{frame_width * frame_count}, height{frame_height};
@@ -34821,15 +34998,14 @@ namespace csb
         for (std::uint16_t frame{tag.from}; frame <= tag.to; ++frame)
         {
           animation.times.push_back(durations[frame]);
-          std::unordered_map<std::string, std::array<double, 4>> hitboxes{};
+          std::unordered_map<std::string, std::vector<std::array<double, 4>>> hitboxes{};
           for (std::size_t layer{}; layer < layers.size(); ++layer)
           {
             if (!layers[layer].hitbox || !layers[layer].visible) continue;
             const cel_info *cel{resolve(layer, frame)};
             if (!cel || cel->width == 0 || cel->height == 0) continue;
-            hitboxes[layers[layer].name] = {static_cast<double>(cel->x), static_cast<double>(cel->y),
-                                            static_cast<double>(cel->x + cel->width),
-                                            static_cast<double>(cel->y + cel->height)};
+            std::vector<std::array<double, 4>> rectangles{decompose(*cel, decode(*cel))};
+            if (!rectangles.empty()) hitboxes[layers[layer].name] = std::move(rectangles);
           }
           animation.hitboxes.push_back(std::move(hitboxes));
         }
