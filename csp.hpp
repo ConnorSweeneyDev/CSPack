@@ -82,7 +82,7 @@ namespace csp
     }
     inline constexpr std::array<std::array<std::uint32_t, 256>, 8> crc32c_table{make_crc32c_table()};
 
-    inline std::uint32_t crc32c_software(std::uint32_t crc, const unsigned char *bytes, std::size_t size)
+    inline std::uint32_t crc32c_software(std::uint32_t crc, const unsigned char *bytes, const std::size_t size)
     {
       std::size_t index{};
       for (; index + 8 <= size; index += 8)
@@ -140,7 +140,8 @@ namespace csp
     }
     inline constexpr std::array<std::array<std::uint32_t, 256>, 4> crc32c_zeros_long{make_crc32c_zeros(long_block)};
     inline constexpr std::array<std::array<std::uint32_t, 256>, 4> crc32c_zeros_short{make_crc32c_zeros(short_block)};
-    inline std::uint32_t crc32c_shift(const std::array<std::array<std::uint32_t, 256>, 4> &zeros, std::uint32_t crc)
+    inline std::uint32_t crc32c_shift(const std::array<std::array<std::uint32_t, 256>, 4> &zeros,
+                                      const std::uint32_t crc)
     {
       return zeros[0][crc & 0xFFu] ^ zeros[1][(crc >> 8) & 0xFFu] ^ zeros[2][(crc >> 16) & 0xFFu] ^ zeros[3][crc >> 24];
     }
@@ -148,7 +149,7 @@ namespace csp
   #if defined(__GNUC__) || defined(__clang__)
     __attribute__((target("sse4.2")))
   #endif
-    inline std::uint32_t crc32c_hardware(std::uint32_t crc, const unsigned char *bytes, std::size_t size)
+    inline std::uint32_t crc32c_hardware(const std::uint32_t crc, const unsigned char *bytes, const std::size_t size)
     {
       std::uint64_t crc0{crc};
       std::size_t index{};
@@ -238,7 +239,7 @@ namespace csp
   };
   static_assert(sizeof(header) == 32);
 
-  inline std::uint64_t signature(const void *data, std::size_t size)
+  inline std::uint64_t signature(const void *data, const std::size_t size)
   {
     const auto *bytes{static_cast<const unsigned char *>(data)};
     std::uint64_t hash{14695981039346656037ull};
@@ -249,7 +250,7 @@ namespace csp
     }
     return hash;
   }
-  inline std::uint32_t fingerprint(const void *data, std::size_t size)
+  inline std::uint32_t fingerprint(const void *data, const std::size_t size)
   {
     const auto *bytes{static_cast<const unsigned char *>(data)};
     std::uint32_t crc{0xFFFFFFFFu};
@@ -395,7 +396,7 @@ namespace csp
 #endif
     }
 
-    const unsigned char *verify(std::uint64_t offset, std::uint64_t size)
+    const unsigned char *verify(const std::uint64_t offset, const std::uint64_t size)
     {
       const entry *begin{entries};
       const auto after{std::upper_bound(begin, begin + count, offset, [](std::uint64_t value, const entry &record)
@@ -413,7 +414,7 @@ namespace csp
       }
       return data + offset;
     }
-    const unsigned char *verify(const unsigned char *pointer, std::uint64_t size)
+    const unsigned char *verify(const unsigned char *pointer, const std::uint64_t size)
     {
       if (pointer < data || pointer >= data + length) return pointer;
       return verify(static_cast<std::uint64_t>(pointer - data), size);
@@ -430,7 +431,7 @@ namespace csp
     std::size_t count{};
   } inline current{};
 
-  inline void mount(const std::filesystem::path &directory, const char *name, std::uint64_t signature)
+  inline void mount(const std::filesystem::path &directory, const char *name, const std::uint64_t signature)
   {
     const std::filesystem::path file{directory / name};
     current.open(file);
