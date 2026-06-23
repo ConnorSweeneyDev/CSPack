@@ -33315,6 +33315,8 @@ inline void swap(nlohmann::NLOHMANN_BASIC_JSON_TPL& j1, nlohmann::NLOHMANN_BASIC
 #include <fstream>
 #include <ios>
 #include <stdexcept>
+#include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -33618,9 +33620,11 @@ namespace csp
 
   /*
    Mapper (Run-Time)
-   mount() maps the file at a known path, validates its header against the build-time signature, and exposes the mapped
-   region through `current`. Consumers resolve their own spans lazily against `current.base()` rather than being
-   patched. The mapping is read-only; consumers treat it as immutable bytes and copy anything they need to keep.
+   mount() maps a file at a known path, validates its header against the build-time signature, and registers it by name
+   in `mappings`; it returns the mapping so the caller can resolve its own spans lazily against base(). Several packs
+   may be mounted at once. The free verify() locates the owning pack for a pointer, so consumers verify by pointer
+   without tracking which pack a blob came from. Mappings are read-only; consumers treat them as immutable bytes and
+   copy anything they need to keep.
   */
   class mapping
   {
@@ -33732,15 +33736,23 @@ namespace csp
     entry *entries{};
     std::atomic<bool> *validated{};
     std::size_t count{};
-  } inline current{};
+  };
 
-  inline void mount(const std::filesystem::path &directory, const char *name, const std::uint64_t signature)
+  inline std::unordered_map<std::string, mapping> &mappings()
+  {
+    static std::unordered_map<std::string, mapping> instance{};
+    return instance;
+  }
+
+  inline mapping &mount(const std::filesystem::path &directory, const std::string &name, const std::uint64_t signature)
   {
     const std::filesystem::path file{directory / name};
-    current.open(file);
+    mappings().erase(name);
+    mapping &map{mappings()[name]};
+    map.open(file);
 
-    const unsigned char *base{current.base()};
-    if (current.size() < sizeof(header)) throw std::runtime_error("Csp file '" + file.string() + "' is truncated");
+    const unsigned char *base{map.base()};
+    if (map.size() < sizeof(header)) throw std::runtime_error("Csp file '" + file.string() + "' is truncated");
     const header &head{*reinterpret_cast<const header *>(base)};
     if (std::memcmp(head.magic, magic, sizeof(magic)) != 0)
       throw std::runtime_error("Csp file '" + file.string() + "' is not a csp file");
@@ -33748,10 +33760,31 @@ namespace csp
       throw std::runtime_error("Csp file '" + file.string() + "' has an unsupported version");
     if (head.signature != signature)
       throw std::runtime_error("Csp file '" + file.string() + "' does not match this build");
-    if (current.size() != sizeof(header) + head.size + static_cast<std::size_t>(head.count) * sizeof(entry))
+    if (map.size() != sizeof(header) + head.size + static_cast<std::size_t>(head.count) * sizeof(entry))
       throw std::runtime_error("Csp file '" + file.string() + "' has an unexpected size");
-    current.load_directory(head);
+    map.load_directory(head);
+    return map;
   }
+
+  inline const unsigned char *verify(const unsigned char *pointer, const std::uint64_t size)
+  {
+    for (auto &item : mappings())
+    {
+      mapping &map{item.second};
+      const unsigned char *base{map.base()};
+      if (base && pointer >= base && pointer < base + map.size()) return map.verify(pointer, size);
+    }
+    return pointer;
+  }
+
+  inline mapping &mounted(const std::string &name)
+  {
+    const auto found{mappings().find(name)};
+    if (found == mappings().end()) throw std::runtime_error("Csp pack '" + name + "' is not mounted");
+    return found->second;
+  }
+
+  inline void unmount(const std::string &name) { mappings().erase(name); }
 }
 
 // CSB 2.3.1
@@ -34763,8 +34796,10 @@ namespace csb
           for (int pixel{}; pixel < width * height; ++pixel)
             mask[static_cast<std::size_t>(pixel)] = pixels[static_cast<std::size_t>(pixel) * 4 + 3] != 0 ? 1 : 0;
           const auto solid{[&](int x, int y)
-                           { return x >= 0 && y >= 0 && x < width && y < height &&
-                                    mask[static_cast<std::size_t>(y) * width + x] != 0; }};
+                           {
+                             return x >= 0 && y >= 0 && x < width && y < height &&
+                                    mask[static_cast<std::size_t>(y) * width + x] != 0;
+                           }};
 
           struct corner
           {
@@ -34791,7 +34826,11 @@ namespace csb
           for (int y{}; y <= height; ++y)
             for (int c{}; c < width;)
             {
-              if (!(solid(c, y - 1) && solid(c, y))) { ++c; continue; }
+              if (!(solid(c, y - 1) && solid(c, y)))
+              {
+                ++c;
+                continue;
+              }
               const int lo{c};
               while (c < width && solid(c, y - 1) && solid(c, y)) ++c;
               const int a{at[static_cast<std::size_t>(lo) * lattice_height + y]};
@@ -34801,7 +34840,11 @@ namespace csb
           for (int x{}; x <= width; ++x)
             for (int r{}; r < height;)
             {
-              if (!(solid(x - 1, r) && solid(x, r))) { ++r; continue; }
+              if (!(solid(x - 1, r) && solid(x, r)))
+              {
+                ++r;
+                continue;
+              }
               const int lo{r};
               while (r < height && solid(x - 1, r) && solid(x, r)) ++r;
               const int a{at[static_cast<std::size_t>(x) * lattice_height + lo]};
@@ -34825,40 +34868,40 @@ namespace csb
 
           std::vector<int> match_h(static_cast<std::size_t>(nh), -1), match_v(static_cast<std::size_t>(nv), -1);
           std::vector<unsigned char> seen(static_cast<std::size_t>(nv));
-          const std::function<bool(int)> augment{
-            [&](int h) -> bool
-            {
-              for (const int v : conflicts[static_cast<std::size_t>(h)])
-              {
-                if (seen[static_cast<std::size_t>(v)]) continue;
-                seen[static_cast<std::size_t>(v)] = 1;
-                if (match_v[static_cast<std::size_t>(v)] < 0 || augment(match_v[static_cast<std::size_t>(v)]))
-                {
-                  match_v[static_cast<std::size_t>(v)] = h;
-                  match_h[static_cast<std::size_t>(h)] = v;
-                  return true;
-                }
-              }
-              return false;
-            }};
+          const std::function<bool(int)> augment{[&](int h) -> bool
+                                                 {
+                                                   for (const int v : conflicts[static_cast<std::size_t>(h)])
+                                                   {
+                                                     if (seen[static_cast<std::size_t>(v)]) continue;
+                                                     seen[static_cast<std::size_t>(v)] = 1;
+                                                     if (match_v[static_cast<std::size_t>(v)] < 0 ||
+                                                         augment(match_v[static_cast<std::size_t>(v)]))
+                                                     {
+                                                       match_v[static_cast<std::size_t>(v)] = h;
+                                                       match_h[static_cast<std::size_t>(h)] = v;
+                                                       return true;
+                                                     }
+                                                   }
+                                                   return false;
+                                                 }};
           for (int h{}; h < nh; ++h)
           {
             std::fill(seen.begin(), seen.end(), static_cast<unsigned char>(0));
             augment(h);
           }
           std::vector<unsigned char> visited_h(static_cast<std::size_t>(nh)), visited_v(static_cast<std::size_t>(nv));
-          const std::function<void(int)> mark{
-            [&](int h)
-            {
-              visited_h[static_cast<std::size_t>(h)] = 1;
-              for (const int v : conflicts[static_cast<std::size_t>(h)])
-              {
-                if (visited_v[static_cast<std::size_t>(v)]) continue;
-                visited_v[static_cast<std::size_t>(v)] = 1;
-                const int next{match_v[static_cast<std::size_t>(v)]};
-                if (next >= 0 && !visited_h[static_cast<std::size_t>(next)]) mark(next);
-              }
-            }};
+          const std::function<void(int)> mark{[&](int h)
+                                              {
+                                                visited_h[static_cast<std::size_t>(h)] = 1;
+                                                for (const int v : conflicts[static_cast<std::size_t>(h)])
+                                                {
+                                                  if (visited_v[static_cast<std::size_t>(v)]) continue;
+                                                  visited_v[static_cast<std::size_t>(v)] = 1;
+                                                  const int next{match_v[static_cast<std::size_t>(v)]};
+                                                  if (next >= 0 && !visited_h[static_cast<std::size_t>(next)])
+                                                    mark(next);
+                                                }
+                                              }};
           for (int h{}; h < nh; ++h)
             if (match_h[static_cast<std::size_t>(h)] < 0 && !visited_h[static_cast<std::size_t>(h)]) mark(h);
 

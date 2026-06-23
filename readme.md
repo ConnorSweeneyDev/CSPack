@@ -17,6 +17,8 @@ A single-header library defining the CSP file format: a packed, memory-mappable 
 - Lazy, per-blob CRC32C verification: only the blobs you touch are checked, and only their pages are faulted in, so a
   multi-gigabyte pack mounts instantly. Verification is computed with a slicing-by-8 software CRC and a
   three-way-parallel hardware CRC (SSE 4.2) where available.
+- Multiple packs can be mounted at once, each registered by name. Verification dispatches to the owning pack by pointer,
+  so consumers never track which pack a blob came from.
 - An FNV-1a signature ties a file to the build that expects it.
 
 ## Requirements
@@ -36,21 +38,24 @@ csp::write(pack, "Data.csp");
 ```
 
 ### Mapper (Run-Time)
-`mount()` maps the file from `directory` and validates its header against the build-time signature and the directory
-layout. It does **not** read the content — no whole-file scan — so mounting is cheap regardless of size. The mapping is
-read-only and stays valid until exit.
+`mount()` maps a file from `directory`, validates its header against the build-time signature and the directory layout,
+and registers it by name in an internal table. It does **not** read the content so mounting is cheap regardless of size.
+Several packs may be mounted at once; `mount()` returns the mapping so the caller can resolve its own spans against
+`base()`. Mappings are read-only and stay valid until `unmount()` or exit.
 ```cpp
 // At startup, before anything reads the file.
-csp::mount(directory, "Data.csp", 6125984697962060194ull);
+csp::mapping &pack{csp::mount(directory, "Data.csp", 6125984697962060194ull)};
 ```
-Resolve a blob's bytes against `current.base()`, then call `verify()` the first time you actually read them. `verify()`
-checks the covering blob's CRC32C once (caching the result), faults in only that blob's pages, and returns a pointer to
-the requested offset; it throws if the blob is corrupt. After the first call it is a cheap, lock-free flag check, so it
-is safe to call on every access and from multiple threads.
+Resolve a blob's bytes against `pack.base()`, then call `csp::verify()` the first time you actually read them. The free
+`verify()` locates the pack whose mapped region contains the pointer, checks that blob's CRC32C once (caching the
+result), faults in only that blob's pages, and returns the pointer; it throws if the blob is corrupt. After the first
+call it is a cheap, lock-free flag check, so it is safe to call on every access and from multiple threads.
 ```cpp
-const std::span<const unsigned char> first{csp::current.base() + 32, 2036};
-csp::current.verify(first.data(), first.size());
+const std::span<const unsigned char> first{pack.base() + 32, 2036};
+csp::verify(first.data(), first.size());
 // Now use first's bytes.
 ```
-`verify()` also takes an `(offset, size)` pair, and the pointer overload safely ignores pointers that fall outside the
-mapping. Use `current.base()` directly only for bytes you do not need verified.
+Pointers that fall outside every mapping pass through `verify()` unchanged; use `base()` directly only for bytes you do
+not need verified. A mounted pack can also be retrieved by name with `csp::mounted("Data.csp")` and released with
+`csp::unmount("Data.csp")` (e.g. when unloading a level). Each `mapping` additionally exposes its own `verify()` taking
+either a pointer or an `(offset, size)` pair, for when you already hold the handle.
