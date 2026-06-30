@@ -33787,7 +33787,7 @@ namespace csp
   inline void unmount(const std::string &name) { mappings().erase(name); }
 }
 
-// CSB 2.3.1
+// CSB 2.3.2
 
 #include <algorithm>
 #include <array>
@@ -37268,7 +37268,7 @@ namespace csb
 
     if (host_platform == WINDOWS)
     {
-      std::string compile_debug_flags{target_configuration == RELEASE ? "/O2 /bigobj " : "/Od /Zi /RTC1 /bigobj "};
+      std::string compile_debug_flags{target_configuration == RELEASE ? "/O2 " : "/Od /Zi /RTC1 "};
       std::string runtime_library{target_linkage == STATIC ? (target_configuration == RELEASE ? "MT" : "MTd")
                                                            : (target_configuration == RELEASE ? "MD" : "MDd")};
       std::string compile_definitions{"/D_WIN32 "};
@@ -37358,7 +37358,7 @@ namespace csb
             compiler = "cl /std:c17 /TC";
           else
             compiler = "cl /std:c++" + std::to_string(cxx_standard);
-          return std::format("{} /nologo /W{} /external:W0 {}/EHsc /MP /{} {}/ifcOutput{}\\ /Fo{}\\ /Fd\"{}\" "
+          return std::format("{} /nologo /W{} /external:W0 {}/bigobj /Zc:preprocessor /EHsc /MP /{} {}/ifcOutput{}\\ /Fo{}\\ /Fd\"{}\" "
                              "/sourceDependencies\"{}\" {}{}/c /Yc\"{}\" /Fp\"{}\" \"{}\"",
                              compiler, std::to_string(warning_level), compile_debug_flags, runtime_library,
                              compile_definitions, pch_directory.string(), pch_directory.string(),
@@ -37408,7 +37408,7 @@ namespace csb
             compiler = "cl /std:c17 /TC";
           else
             compiler = "cl /std:c++" + std::to_string(cxx_standard);
-          return std::format("{} /nologo /W{} /external:W0 {}/EHsc /MP /{} {}/ifcOutput{}\\ /Fo{}\\ /Fd\"{}\" "
+          return std::format("{} /nologo /W{} /external:W0 {}/bigobj /Zc:preprocessor /EHsc /MP /{} {}/ifcOutput{}\\ /Fo{}\\ /Fd\"{}\" "
                              "/sourceDependencies\"{}\" {}{}/c {}\"()\"",
                              compiler, std::to_string(warning_level), compile_debug_flags, runtime_library,
                              compile_definitions, utility::build_directory.string(), utility::build_directory.string(),
