@@ -33787,7 +33787,7 @@ namespace csp
   inline void unmount(const std::string &name) { mappings().erase(name); }
 }
 
-// CSB 2.3.2
+// CSB 2.4.0
 
 #include <algorithm>
 #include <array>
@@ -33977,12 +33977,22 @@ namespace csb
       std::vector<double> times{};
       std::vector<std::unordered_map<std::string, std::vector<std::array<double, 4>>>> hitboxes{};
     };
+    struct slice
+    {
+      std::string name{};
+      int x{};
+      int y{};
+      unsigned int width{};
+      unsigned int height{};
+    };
     std::vector<std::byte> data{};
     unsigned int width{};
     unsigned int height{};
     unsigned int channels{};
     std::pair<unsigned int, unsigned int> resolution{};
     std::vector<animation> animations{};
+    std::vector<slice> slices{};
+    bool hitboxes{};
   };
 
   namespace utility
@@ -34633,9 +34643,11 @@ namespace csb
       std::vector<layer_info> layers{};
       std::vector<std::tuple<std::uint16_t, std::uint16_t, cel_info>> raw_cels{};
       std::vector<tag_info> tags{};
+      std::vector<aseprite::slice> slices{};
       std::vector<double> durations(frame_count, 0.0);
       std::string group{};
       bool image_group{};
+      bool hitbox_group{};
 
       for (std::uint16_t frame{}; frame < frame_count; ++frame)
       {
@@ -34680,6 +34692,7 @@ namespace csb
                                          "' (only 'image' and 'hitbox' are allowed): " + file.string());
               group = name;
               if (name == "image") image_group = true;
+              if (name == "hitbox") hitbox_group = true;
             }
             else
             {
@@ -34733,6 +34746,22 @@ namespace csb
               throw std::runtime_error("Aseprite tilemap cels are not supported: " + file.string());
             cel.present = true;
             raw_cels.emplace_back(layer, frame, cel);
+          }
+          else if (chunk_type == 0x2022)
+          {
+            const std::uint32_t keys{dword()};
+            dword();
+            dword();
+            const std::string name{string()};
+            if (keys > 0)
+            {
+              dword();
+              const auto x{static_cast<std::int32_t>(dword())};
+              const auto y{static_cast<std::int32_t>(dword())};
+              const std::uint32_t slice_width{dword()};
+              const std::uint32_t slice_height{dword()};
+              slices.push_back({name, x, y, slice_width, slice_height});
+            }
           }
           cursor = chunk_start + chunk_size;
         }
@@ -35031,6 +35060,8 @@ namespace csb
       result.height = height;
       result.channels = 4;
       result.resolution = {frame_width, frame_height};
+      result.slices = std::move(slices);
+      result.hitboxes = hitbox_group;
       for (const tag_info &tag : tags)
       {
         if (tag.from >= frame_count || tag.to >= frame_count || tag.from > tag.to)
