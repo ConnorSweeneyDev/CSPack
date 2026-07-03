@@ -33985,6 +33985,14 @@ namespace csb
       unsigned int width{};
       unsigned int height{};
     };
+    struct glyph
+    {
+      std::uint64_t character{};
+      unsigned int x{};
+      unsigned int y{};
+      unsigned int width{};
+      unsigned int height{};
+    };
     std::vector<std::byte> data{};
     unsigned int width{};
     unsigned int height{};
@@ -33992,6 +34000,7 @@ namespace csb
     std::pair<unsigned int, unsigned int> resolution{};
     std::vector<animation> animations{};
     std::vector<slice> slices{};
+    std::vector<glyph> glyphs{};
     bool hitboxes{};
   };
 
@@ -34515,8 +34524,8 @@ namespace csb
    * | `std::vector<std::string>`: Reads the file into a list of strings, one per line.
    * | `std::vector<std::byte>`: Reads the file into a byte array.
    * | `csp::pack`: Reading csp data is not supported.
-   * | `image`: Reads the file as an image using stb_image - returns data, width, height and channels.
-   * | `aseprite`: Reads the file as a resource containing image data as well as frame and hitbox data.
+   * | `csg::image`: Reads the file as an image using stb_image - returns data, width, height and channels.
+   * | `csg::aseprite`: Reads the file as a resource containing image data as well as frame, hitbox and glyph data.
    * | `nlohmann::json`: Reads the file as a JSON object.
    *
    * See also: `write_file`, `modify_file`.
@@ -35062,6 +35071,58 @@ namespace csb
       result.resolution = {frame_width, frame_height};
       result.slices = std::move(slices);
       result.hitboxes = hitbox_group;
+      if (!result.slices.empty())
+      {
+        const auto codepoint{[&file](const std::string &name) -> std::uint64_t
+                             {
+                               const auto invalid{
+                                 [&file, &name]()
+                                 {
+                                   return std::runtime_error("Aseprite slice name '" + name +
+                                                             "' must be a single character: " + file.string());
+                                 }};
+                               if (name.empty()) throw invalid();
+                               const auto first{static_cast<unsigned char>(name[0])};
+                               std::size_t length{1};
+                               std::uint64_t character{first};
+                               if (first >= 0xF0)
+                                 length = 4, character = first & 0x07u;
+                               else if (first >= 0xE0)
+                                 length = 3, character = first & 0x0Fu;
+                               else if (first >= 0xC0)
+                                 length = 2, character = first & 0x1Fu;
+                               else if (first >= 0x80)
+                                 throw invalid();
+                               if (name.size() != length) throw invalid();
+                               for (std::size_t offset{1}; offset < length; ++offset)
+                               {
+                                 const auto continuation{static_cast<unsigned char>(name[offset])};
+                                 if ((continuation & 0xC0u) != 0x80u) throw invalid();
+                                 character = (character << 6) | (continuation & 0x3Fu);
+                               }
+                               return character;
+                             }};
+        for (const aseprite::slice &entry : result.slices)
+        {
+          if (entry.x < 0 || entry.y < 0 || entry.width == 0 || entry.height == 0 ||
+              static_cast<unsigned int>(entry.x) + entry.width > frame_width ||
+              static_cast<unsigned int>(entry.y) + entry.height > frame_height)
+            throw std::runtime_error("Aseprite slice '" + entry.name +
+                                     "' must fit within the canvas: " + file.string());
+          if (entry.height != result.slices.front().height)
+            throw std::runtime_error("Aseprite slice '" + entry.name +
+                                     "' must match the height of every other slice: " + file.string());
+          result.glyphs.push_back({codepoint(entry.name), static_cast<unsigned int>(entry.x),
+                                   static_cast<unsigned int>(entry.y), entry.width, entry.height});
+        }
+        std::sort(result.glyphs.begin(), result.glyphs.end(),
+                  [](const aseprite::glyph &left, const aseprite::glyph &right)
+                  { return left.character < right.character; });
+        for (std::size_t index{}; index + 1 < result.glyphs.size(); ++index)
+          if (result.glyphs[index].character == result.glyphs[index + 1].character)
+            throw std::runtime_error("Aseprite file contains duplicate slices for the same character: " +
+                                     file.string());
+      }
       for (const tag_info &tag : tags)
       {
         if (tag.from >= frame_count || tag.to >= frame_count || tag.from > tag.to)
@@ -35112,8 +35173,8 @@ namespace csb
    * | `std::vector<std::string>`: Writes each string in the list to the file, one per line.
    * | `std::vector<std::byte>`: Writes the byte array to the file.
    * | `csp::pack`: Writes the csp data to the file.
-   * | `image`: Writing images is not supported.
-   * | `aseprite`: Writing aseprite files is not supported.
+   * | `csg::image`: Writing images is not supported.
+   * | `csg::aseprite`: Writing aseprite files is not supported.
    * | `nlohmann::json`: Writes the JSON object to the file.
    *
    * See also: `read_file`, `modify_file`.
@@ -35163,8 +35224,8 @@ namespace csb
    * | `std::vector<std::string>`: Writes each string in the list to the file, one per line.
    * | `std::vector<std::byte>`: Writes the byte array to the file.
    * | `csp::pack`: Modifying csp data is not supported.
-   * | `image`: Modifying images is not supported.
-   * | `aseprite`: Modifying aseprite files is not supported.
+   * | `csg::image`: Modifying images is not supported.
+   * | `csg::aseprite`: Modifying aseprite files is not supported.
    * | `nlohmann::json`: Writes the JSON object to the file.
    *
    * See also: `read_file`, `write_file`.
@@ -37389,13 +37450,14 @@ namespace csb
             compiler = "cl /std:c17 /TC";
           else
             compiler = "cl /std:c++" + std::to_string(cxx_standard);
-          return std::format("{} /nologo /W{} /external:W0 {}/bigobj /Zc:preprocessor /EHsc /MP /{} {}/ifcOutput{}\\ /Fo{}\\ /Fd\"{}\" "
-                             "/sourceDependencies\"{}\" {}{}/c /Yc\"{}\" /Fp\"{}\" \"{}\"",
-                             compiler, std::to_string(warning_level), compile_debug_flags, runtime_library,
-                             compile_definitions, pch_directory.string(), pch_directory.string(),
-                             (pch_directory / "(stem)_pch.pdb").string(), (pch_directory / "(stem)_pch.d").string(),
-                             compile_include_directories, compile_external_include_directories, relative_path,
-                             (pch_directory / "(stem).pch").string(), (pch_directory / "(stem)_pch.cpp").string());
+          return std::format(
+            "{} /nologo /W{} /external:W0 {}/bigobj /Zc:preprocessor /EHsc /MP /{} {}/ifcOutput{}\\ /Fo{}\\ /Fd\"{}\" "
+            "/sourceDependencies\"{}\" {}{}/c /Yc\"{}\" /Fp\"{}\" \"{}\"",
+            compiler, std::to_string(warning_level), compile_debug_flags, runtime_library, compile_definitions,
+            pch_directory.string(), pch_directory.string(), (pch_directory / "(stem)_pch.pdb").string(),
+            (pch_directory / "(stem)_pch.d").string(), compile_include_directories,
+            compile_external_include_directories, relative_path, (pch_directory / "(stem).pch").string(),
+            (pch_directory / "(stem)_pch.cpp").string());
         },
         precompiled_headers, check_files, dependency_handler);
 
@@ -37439,13 +37501,13 @@ namespace csb
             compiler = "cl /std:c17 /TC";
           else
             compiler = "cl /std:c++" + std::to_string(cxx_standard);
-          return std::format("{} /nologo /W{} /external:W0 {}/bigobj /Zc:preprocessor /EHsc /MP /{} {}/ifcOutput{}\\ /Fo{}\\ /Fd\"{}\" "
-                             "/sourceDependencies\"{}\" {}{}/c {}\"()\"",
-                             compiler, std::to_string(warning_level), compile_debug_flags, runtime_library,
-                             compile_definitions, utility::build_directory.string(), utility::build_directory.string(),
-                             (utility::build_directory / "(stem).pdb").string(),
-                             (utility::build_directory / "(stem).d").string(), compile_include_directories,
-                             compile_external_include_directories, pch_flags);
+          return std::format(
+            "{} /nologo /W{} /external:W0 {}/bigobj /Zc:preprocessor /EHsc /MP /{} {}/ifcOutput{}\\ /Fo{}\\ /Fd\"{}\" "
+            "/sourceDependencies\"{}\" {}{}/c {}\"()\"",
+            compiler, std::to_string(warning_level), compile_debug_flags, runtime_library, compile_definitions,
+            utility::build_directory.string(), utility::build_directory.string(),
+            (utility::build_directory / "(stem).pdb").string(), (utility::build_directory / "(stem).d").string(),
+            compile_include_directories, compile_external_include_directories, pch_flags);
         },
         source_files, check_files, dependency_handler);
     }
