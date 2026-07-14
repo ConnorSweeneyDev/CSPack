@@ -33787,7 +33787,7 @@ namespace csp
   inline void unmount(const std::string &name) { mappings().erase(name); }
 }
 
-// CSB 2.4.0
+// CSB 3.0.0
 
 #include <algorithm>
 #include <array>
@@ -37148,6 +37148,485 @@ namespace csb
         return std::string();
       },
       resources, checks);
+  }
+
+  /**
+   * Packs game resources into csp pack files and generates accessor code for them.
+   *
+   * Texture and font resources must be aseprite files; sound and music resources are embedded as raw audio data. Pack
+   * files are written to "build/debug" or "build/release" depending on the target configuration, and stale csp files
+   * found there are removed. The generated header declares each resource inside the given namespace and the generated
+   * source defines them against the pack files, which are resolved relative to the executable at run time.
+   *
+   * This function's parameters behave as follows:
+   * | `textures`: A list of aseprite files that will be accessible as images with their animations and hitboxes.
+   * | `fonts`: A list of aseprite files that will be accessible as fonts with their animations and glyph slices.
+   * | `sounds`: A list of audio files that will be accessible as sounds.
+   * | `musics`: A list of audio files that will be accessible as music.
+   * | `pack`: A function that takes a resource file and returns the name of the csp file it belongs to, without the
+   *           extension; for example, returning "CSGame" places the file in "build/[debug|release]/CSGame.csp" and
+   *           mounts it as "CSGame.csp" at run time.
+   * | `space`: The namespace that the generated resource accessors will be placed in.
+   * | `outputs`: A pair of output paths specifying where to write the generated header and source files respectively.
+   *
+   * See also: `embed`, `choose_files`.
+   */
+  inline void pack(const std::vector<std::filesystem::path> &textures, const std::vector<std::filesystem::path> &fonts,
+                   const std::vector<std::filesystem::path> &sounds, const std::vector<std::filesystem::path> &musics,
+                   const std::function<std::string(const std::filesystem::path &)> &pack, const std::string &space,
+                   const std::pair<std::filesystem::path, std::filesystem::path> &outputs)
+  {
+    if (!pack) throw std::runtime_error("Pack name function not set.");
+    if (space.empty()) throw std::runtime_error("Pack namespace not set.");
+    if (outputs.first.empty() || outputs.second.empty()) throw std::runtime_error("Pack output files not set.");
+
+    std::unordered_map<std::filesystem::path, std::string> spaces{};
+    std::vector<std::filesystem::path> resources{};
+    const auto claim{[&](const std::vector<std::filesystem::path> &files, const std::string &space)
+                     {
+                       for (const auto &file : files)
+                       {
+                         if (!spaces.emplace(file, space).second)
+                           throw std::runtime_error("Resource file given more than once: " + file.string() + ".");
+                         resources.push_back(file);
+                       }
+                     }};
+    claim(textures, "image");
+    claim(fonts, "font");
+    claim(sounds, "sound");
+    claim(musics, "music");
+    if (resources.empty()) throw std::runtime_error("No resources to pack.");
+
+    std::unordered_map<std::filesystem::path, std::string> packs_of{};
+    for (const auto &file : resources)
+    {
+      const auto name{pack(file)};
+      if (name.empty()) throw std::runtime_error("Pack name is empty for resource: " + file.string() + ".");
+      packs_of.emplace(file, name);
+    }
+    const auto pack_directory{path("build") / (target_configuration == RELEASE ? "release" : "debug")};
+    std::vector<std::filesystem::path> pack_files{};
+    for (const auto &file : resources)
+    {
+      const auto pack_file{pack_directory / (packs_of.at(file) + ".csp")};
+      if (!contains(pack_files, pack_file)) pack_files.push_back(pack_file);
+    }
+
+    struct extra
+    {
+      std::string space{};
+      unsigned int width{};
+      unsigned int height{};
+      unsigned int channels{};
+      unsigned int frame_width{};
+      unsigned int frame_height{};
+      std::vector<aseprite::animation> animations{};
+      std::vector<aseprite::glyph> glyphs{};
+    };
+    using data = std::tuple<std::vector<std::byte>, extra>;
+
+    const auto manifest{path("build") / "resource" / "pack.manifest"};
+    std::vector<std::filesystem::path> manifest_files{resources};
+    std::sort(manifest_files.begin(), manifest_files.end());
+    std::string manifest_list{};
+    for (const auto &file : manifest_files)
+      manifest_list += spaces.at(file) + " " + packs_of.at(file) + " " + file.string() + "\n";
+    if (!std::filesystem::exists(manifest) || read_file<std::string>(manifest) != manifest_list)
+    {
+      csb::remove({outputs.first, outputs.second});
+      write_file(manifest, manifest_list);
+    }
+
+    embed<data>(
+      {"// This file is automatically generated, do not edit manually.\n\n"
+       "#pragma once\n\n"
+       "#include \"cse/collision.hpp\"\n"
+       "#include \"cse/resource.hpp\"\n\n",
+       std::format("// This file is automatically generated, do not edit manually.\n\n"
+                   "#include \"{}\"\n\n"
+                   "#include \"cse/resource.hpp\"\n\n",
+                   outputs.first.filename().string())},
+      {{},
+       {},
+       [](const std::filesystem::path &file) -> std::string { return file.stem().string(); },
+       [&spaces](const std::filesystem::path &file) -> data
+       {
+         extra current{};
+         current.space = spaces.at(file);
+         std::vector<std::byte> blob{};
+         if (current.space == "image" || current.space == "font")
+         {
+           const auto texture{read_file<aseprite>(file)};
+           blob = texture.data;
+           current.width = texture.width;
+           current.height = texture.height;
+           current.channels = texture.channels;
+           current.frame_width = texture.resolution.first;
+           current.frame_height = texture.resolution.second;
+           current.animations = texture.animations;
+           if (current.space == "font")
+           {
+             if (texture.hitboxes) throw std::runtime_error("Font must not contain a 'hitbox' group: " + file.string());
+             if (texture.glyphs.empty())
+               throw std::runtime_error("Font must contain at least one slice: " + file.string());
+             current.glyphs = texture.glyphs;
+           }
+         }
+         else
+           blob = read_file<std::vector<std::byte>>(file);
+         return data{blob, current};
+       },
+       {}},
+      {[&](const std::vector<std::tuple<std::filesystem::path, std::string, data>> &files) -> std::string
+       {
+         std::string result{std::format("namespace {}\n{{\n", space)};
+         const auto declare{[&](const std::string &space, const std::string &type)
+                            {
+                              std::string block{};
+                              for (const auto &[file, name, value] : files)
+                                if (std::get<1>(value).space == space)
+                                  block += std::format("    extern const cse::{} {};\n", type, name);
+                              if (!block.empty()) result += std::format("  namespace {}\n  {{\n{}  }}\n", space, block);
+                            }};
+         declare("image", "image");
+         declare("font", "font");
+         {
+           std::string structs{};
+           std::string externs{};
+           for (const auto &[file, name, value] : files)
+           {
+             const auto &texture{std::get<1>(value)};
+             if (texture.space != "image" && texture.space != "font") continue;
+             structs += std::format("      struct {}_animation\n      {{\n", name);
+             for (const auto &animation : texture.animations)
+               structs += std::format("        const cse::animation {};\n", animation.name);
+             structs += "      };\n";
+             externs += std::format("    extern const detail::{}_animation {};\n", name, name);
+           }
+           if (!externs.empty())
+             result +=
+               "  namespace animation\n  {\n    namespace detail\n    {\n" + structs + "    }\n" + externs + "  }\n";
+         }
+         {
+           const auto hitbox_names{[&](const extra &texture)
+                                   {
+                                     std::vector<std::string> names{};
+                                     for (const auto &animation : texture.animations)
+                                       for (const auto &frame : animation.hitboxes)
+                                         for (const auto &[identifier, bounds] : frame)
+                                           if (std::find(names.begin(), names.end(), identifier) == names.end())
+                                             names.push_back(identifier);
+                                     return names;
+                                   }};
+           std::string structs{};
+           std::string externs{};
+           for (const auto &[file, name, value] : files)
+           {
+             const auto &texture{std::get<1>(value)};
+             if (texture.space != "image") continue;
+             const auto names{hitbox_names(texture)};
+             if (names.empty()) continue;
+             structs += std::format("      struct {}_hitbox\n      {{\n", name);
+             for (const auto &identifier : names) structs += std::format("        const cse::hitbox {};\n", identifier);
+             structs += "      };\n";
+             externs += std::format("    extern const detail::{}_hitbox {};\n", name, name);
+           }
+           if (!externs.empty())
+             result +=
+               "  namespace hitbox\n  {\n    namespace detail\n    {\n" + structs + "    }\n" + externs + "  }\n";
+         }
+         declare("sound", "sound");
+         declare("music", "music");
+         result += "}\n";
+         return result;
+       },
+       [&](const std::vector<std::tuple<std::filesystem::path, std::string, data>> &files) -> std::string
+       {
+         const bool debug{target_configuration == DEBUG};
+         const auto put_u64{[](std::vector<std::byte> &out, std::uint64_t value)
+                            {
+                              std::byte raw[sizeof(value)];
+                              std::memcpy(raw, &value, sizeof(value));
+                              out.insert(out.end(), raw, raw + sizeof(value));
+                            }};
+         const auto put_f64{[](std::vector<std::byte> &out, double value)
+                            {
+                              std::byte raw[sizeof(value)];
+                              std::memcpy(raw, &value, sizeof(value));
+                              out.insert(out.end(), raw, raw + sizeof(value));
+                            }};
+         const auto hash_identifier{[](const std::string &text)
+                                    {
+                                      std::uint64_t hash{14695981039346656037ull};
+                                      for (const char character : text)
+                                        hash = (hash ^ static_cast<std::uint64_t>(character)) * 1099511628211ull;
+                                      return hash;
+                                    }};
+         const auto hitbox_names{[&](const extra &texture)
+                                 {
+                                   std::vector<std::string> names{};
+                                   for (const auto &animation : texture.animations)
+                                     for (const auto &frame : animation.hitboxes)
+                                       for (const auto &[identifier, rectangles] : frame)
+                                         if (std::find(names.begin(), names.end(), identifier) == names.end())
+                                           names.push_back(identifier);
+                                   return names;
+                                 }};
+
+         struct placement
+         {
+           std::string key;
+           std::uint64_t offset;
+           std::uint64_t size;
+         };
+         std::unordered_map<std::filesystem::path, placement> placements{};
+         std::unordered_map<std::filesystem::path,
+                            std::vector<std::tuple<std::uint64_t, std::uint64_t, unsigned int, unsigned int>>>
+           clips{};
+         std::unordered_map<std::filesystem::path, std::pair<std::uint64_t, std::uint64_t>> glyph_spans{};
+         std::vector<std::string> packs{};
+         for (const auto &[file, name, value] : files)
+           if (!contains(packs, packs_of.at(file))) packs.push_back(packs_of.at(file));
+         std::sort(packs.begin(), packs.end());
+
+         std::string loaders{};
+         for (const std::string &current_pack : packs)
+         {
+           std::vector<std::byte> frames_blob{};
+           std::vector<std::byte> hitboxes_blob{};
+           std::vector<std::byte> glyphs_blob{};
+           std::vector<std::byte> strings_blob{};
+           std::unordered_map<std::string, std::pair<std::uint64_t, std::uint64_t>> string_pool{};
+           std::uint64_t frames_total{};
+           std::uint64_t hitboxes_total{};
+           std::uint64_t glyphs_total{};
+           for (const auto &[file, name, value] : files)
+           {
+             const auto &texture{std::get<1>(value)};
+             if ((texture.space != "image" && texture.space != "font") || packs_of.at(file) != current_pack) continue;
+             const unsigned int per_row{texture.width / texture.frame_width};
+             const unsigned int per_column{texture.height / texture.frame_height};
+             for (const auto &animation : texture.animations)
+             {
+               const std::uint64_t frame_index{frames_total};
+               const auto start{animation.range.first};
+               const auto end{animation.range.second};
+               std::size_t index{};
+               for (unsigned int frame{start}; frame <= end; ++frame)
+               {
+                 const unsigned int x{frame % per_row};
+                 const unsigned int y{(per_column - 1) - (frame / per_row)};
+                 const double top{static_cast<double>((y + 1) * texture.frame_height) /
+                                  static_cast<double>(texture.height)};
+                 const double left{static_cast<double>(x * texture.frame_width) / static_cast<double>(texture.width)};
+                 const double bottom{static_cast<double>(y * texture.frame_height) /
+                                     static_cast<double>(texture.height)};
+                 const double right{static_cast<double>((x + 1) * texture.frame_width) /
+                                    static_cast<double>(texture.width)};
+
+                 const std::uint64_t hitbox_index{hitboxes_total};
+                 std::uint64_t hitbox_count{};
+                 if (index < animation.hitboxes.size() && !animation.hitboxes[index].empty())
+                   for (const auto &[identifier, rectangles] : animation.hitboxes[index])
+                   {
+                     const std::string full{name + "." + identifier};
+                     std::uint64_t label_offset{}, label_size{}, label_hash{};
+                     if (debug)
+                     {
+                       auto entry{string_pool.find(full)};
+                       if (entry == string_pool.end())
+                       {
+                         const auto offset{static_cast<std::uint64_t>(strings_blob.size())};
+                         const auto *raw{reinterpret_cast<const std::byte *>(full.data())};
+                         strings_blob.insert(strings_blob.end(), raw, raw + full.size());
+                         entry =
+                           string_pool.emplace(full, std::pair{offset, static_cast<std::uint64_t>(full.size())}).first;
+                       }
+                       label_offset = entry->second.first;
+                       label_size = entry->second.second;
+                     }
+                     else
+                       label_hash = hash_identifier(full);
+                     for (const auto &bounds : rectangles)
+                     {
+                       if (debug)
+                       {
+                         put_u64(hitboxes_blob, label_offset);
+                         put_u64(hitboxes_blob, label_size);
+                       }
+                       else
+                         put_u64(hitboxes_blob, label_hash);
+                       put_f64(hitboxes_blob, bounds[0]);
+                       put_f64(hitboxes_blob, bounds[1]);
+                       put_f64(hitboxes_blob, bounds[2]);
+                       put_f64(hitboxes_blob, bounds[3]);
+                       ++hitboxes_total;
+                       ++hitbox_count;
+                     }
+                   }
+
+                 put_f64(frames_blob, left);
+                 put_f64(frames_blob, top);
+                 put_f64(frames_blob, right);
+                 put_f64(frames_blob, bottom);
+                 put_f64(frames_blob, animation.times.at(index));
+                 put_u64(frames_blob, hitbox_count > 0 ? hitbox_index : 0);
+                 put_u64(frames_blob, hitbox_count);
+                 ++frames_total;
+                 ++index;
+               }
+               clips[file].push_back({frame_index, frames_total - frame_index, start, end});
+             }
+             if (texture.space == "font")
+             {
+               glyph_spans[file] = {glyphs_total, texture.glyphs.size()};
+               const auto canvas_width{static_cast<double>(texture.frame_width)};
+               const auto canvas_height{static_cast<double>(texture.frame_height)};
+               for (const auto &entry : texture.glyphs)
+               {
+                 put_u64(glyphs_blob, entry.character);
+                 put_f64(glyphs_blob, static_cast<double>(entry.x) / canvas_width);
+                 put_f64(glyphs_blob, 1.0 - static_cast<double>(entry.y) / canvas_height);
+                 put_f64(glyphs_blob, static_cast<double>(entry.x + entry.width) / canvas_width);
+                 put_f64(glyphs_blob, 1.0 - static_cast<double>(entry.y + entry.height) / canvas_height);
+                 put_f64(glyphs_blob, static_cast<double>(entry.width));
+                 put_f64(glyphs_blob, static_cast<double>(entry.height));
+                 ++glyphs_total;
+               }
+             }
+           }
+
+           csp::pack container{};
+           for (const auto &[file, name, value] : files)
+           {
+             if (packs_of.at(file) != current_pack) continue;
+             const std::size_t entry{container.table.size()};
+             container.append(std::get<0>(value));
+             placements[file] = {current_pack + ".csp", container.table[entry].first, container.table[entry].second};
+           }
+           const std::size_t frames_entry{container.table.size()};
+           container.append(frames_blob);
+           const std::size_t hitboxes_entry{container.table.size()};
+           container.append(hitboxes_blob);
+           const std::size_t glyphs_entry{container.table.size()};
+           container.append(glyphs_blob);
+           const std::size_t strings_entry{container.table.size()};
+           if (debug) container.append(strings_blob);
+           write_file(pack_directory / (current_pack + ".csp"), container);
+
+           std::string identifier{current_pack};
+           std::replace(identifier.begin(), identifier.end(), '.', '_');
+           std::replace(identifier.begin(), identifier.end(), '-', '_');
+           if (debug)
+             loaders +=
+               std::format("  const loader loaded_{}{{\"{}.csp\", {}ull, {}, {}, {}, {}, {}, {}, {}}};\n", identifier,
+                           current_pack, container.signature(), container.table[frames_entry].first,
+                           container.table[frames_entry].second, container.table[hitboxes_entry].first,
+                           container.table[hitboxes_entry].second, container.table[glyphs_entry].first,
+                           container.table[glyphs_entry].second, container.table[strings_entry].first);
+           else
+             loaders += std::format("  const loader loaded_{}{{\"{}.csp\", {}ull, {}, {}, {}, {}, {}, {}}};\n",
+                                    identifier, current_pack, container.signature(),
+                                    container.table[frames_entry].first, container.table[frames_entry].second,
+                                    container.table[hitboxes_entry].first, container.table[hitboxes_entry].second,
+                                    container.table[glyphs_entry].first, container.table[glyphs_entry].second);
+         }
+
+         std::string result{"namespace cse::resource\n{\n" + loaders + "}\n\n"};
+
+         result += std::format("namespace {}\n{{\n", space);
+         const auto define{[&](const std::string &space, const std::string &type)
+                           {
+                             std::string block{};
+                             for (const auto &[file, name, value] : files)
+                               if (std::get<1>(value).space == space)
+                               {
+                                 const auto &place{placements.at(file)};
+                                 block +=
+                                   std::format("    const cse::{} {}{{cse::resource::region(\"{}\", {}, {})}};\n", type,
+                                               name, place.key, place.offset, place.size);
+                               }
+                             if (!block.empty()) result += std::format("  namespace {}\n  {{\n{}  }}\n", space, block);
+                           }};
+         {
+           std::string block{};
+           for (const auto &[file, name, value] : files)
+           {
+             const auto &texture{std::get<1>(value)};
+             if (texture.space != "image") continue;
+             const auto &place{placements.at(file)};
+             block +=
+               std::format("    const cse::image {}{{cse::resource::region(\"{}\", {}, {}), {}, {}, {}, {}, {}}};\n",
+                           name, place.key, place.offset, place.size, texture.width, texture.height,
+                           texture.frame_width, texture.frame_height, texture.channels);
+           }
+           if (!block.empty()) result += "  namespace image\n  {\n" + block + "  }\n";
+         }
+         {
+           std::string block{};
+           for (const auto &[file, name, value] : files)
+           {
+             const auto &texture{std::get<1>(value)};
+             if (texture.space != "font") continue;
+             const auto &place{placements.at(file)};
+             const auto &span{glyph_spans.at(file)};
+             block += std::format("    const cse::font {}{{{{cse::resource::region(\"{}\", {}, {}), {}, {}, {}, {}, "
+                                  "{}}}, cse::resource::glyphs(\"{}\", {}, {})}};\n",
+                                  name, place.key, place.offset, place.size, texture.width, texture.height,
+                                  texture.frame_width, texture.frame_height, texture.channels, place.key, span.first,
+                                  span.second);
+           }
+           if (!block.empty()) result += "  namespace font\n  {\n" + block + "  }\n";
+         }
+         {
+           std::string block{};
+           for (const auto &[file, name, value] : files)
+           {
+             const auto &texture{std::get<1>(value)};
+             if (texture.space != "image" && texture.space != "font") continue;
+             const auto &place{placements.at(file)};
+             block += std::format("    const detail::{}_animation {}{{", name, name);
+             const auto &list{clips[file]};
+             for (std::size_t index{}; index < list.size(); ++index)
+             {
+               const auto &[frame_index, frame_count, start, end]{list[index]};
+               block += std::format("{{cse::resource::frames(\"{}\", {}, {}), {}, {}}}", place.key, frame_index,
+                                    frame_count, start, end);
+               if (index + 1 < list.size()) block += ", ";
+             }
+             block += "};\n";
+           }
+           if (!block.empty()) result += "  namespace animation\n  {\n" + block + "  }\n";
+         }
+         {
+           std::string block{};
+           for (const auto &[file, name, value] : files)
+           {
+             const auto &texture{std::get<1>(value)};
+             if (texture.space != "image") continue;
+             const auto names{hitbox_names(texture)};
+             if (names.empty()) continue;
+             block += std::format("    const detail::{}_hitbox {}\n    {{\n", name, name);
+             for (std::size_t index{}; index < names.size(); ++index)
+             {
+               block += std::format("      \"{}\"", name + "." + names[index]);
+               block += index + 1 < names.size() ? ",\n" : "\n";
+             }
+             block += "    };\n";
+           }
+           if (!block.empty()) result += "  namespace hitbox\n  {\n" + block + "  }\n";
+         }
+         define("sound", "sound");
+         define("music", "music");
+         result += "}\n";
+         return result;
+       }},
+      {}, resources, outputs, pack_files);
+
+    if (std::filesystem::exists(pack_directory))
+      for (const auto &file : choose_files({pack_directory}, [](const std::filesystem::path &entry)
+                                           { return entry.extension() == ".csp"; }))
+        if (!contains(pack_files, file)) csb::remove(file);
   }
 
   /**
