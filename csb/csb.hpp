@@ -35700,21 +35700,15 @@ namespace csb::utility
       std::execution::par, items.begin(), items.end(),
       [&](const auto &item)
       {
-        const auto item_path{[&]() -> std::filesystem::path
-                             {
-                               if constexpr (std::same_as<std::remove_cvref_t<decltype(item)>, std::filesystem::path>)
-                                 return item;
-                               else
-                                 return item.first;
-                             }()};
-        const auto item_dependencies{
-          [&]() -> std::vector<std::filesystem::path>
-          {
-            if constexpr (std::same_as<std::remove_cvref_t<decltype(item)>, std::filesystem::path>)
-              return {};
-            else
-              return item.second;
-          }()};
+        std::filesystem::path item_path{};
+        std::vector<std::filesystem::path> item_dependencies{};
+        if constexpr (std::same_as<std::remove_cvref_t<decltype(item)>, std::filesystem::path>)
+          item_path = item;
+        else
+        {
+          item_path = item.first;
+          item_dependencies = item.second;
+        }
 
         std::string real_command{};
         if (std::holds_alternative<std::string>(command))
