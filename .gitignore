@@ -7,8 +7,9 @@
 
 # Build Output
 build/
-.clang-format
 .clangd
+.clang-tidy
+.clang-format
 
 # User Files
 .env

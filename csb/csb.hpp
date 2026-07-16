@@ -14,7 +14,9 @@
   #pragma warning(push, 0)
 #endif
 
-#define STB_IMAGE_IMPLEMENTATION
+#ifndef STB_IMAGE_IMPLEMENTATION
+  #define STB_IMAGE_IMPLEMENTATION
+#endif
 /* stb_image - v2.30 - public domain image loader - http://nothings.org/stb
                                   no warranty implied; use at your own risk
 
@@ -33300,8 +33302,6 @@ inline void swap(nlohmann::NLOHMANN_BASIC_JSON_TPL& j1, nlohmann::NLOHMANN_BASIC
 #elif defined(_MSC_VER)
   #pragma warning(pop)
 #endif
-// NOLINTEND
-// clang-format on
 
 // CSP 1.0.0
 
@@ -33377,12 +33377,13 @@ namespace csp
       for (std::uint32_t entry{}; entry < 256; ++entry)
       {
         std::uint32_t value{entry};
-        for (int bit{}; bit < 8; ++bit) value = (value & 1u) ? (crc32c_poly ^ (value >> 1)) : (value >> 1);
-        table[0][entry] = value;
+        for (int bit{}; bit < 8; ++bit) value = (value & 1u) ? (crc32c_poly ^ (value >> 1u)) : (value >> 1u);
+        table.at(0).at(entry) = value;
       }
       for (std::uint32_t entry{}; entry < 256; ++entry)
         for (std::size_t slice{1}; slice < 8; ++slice)
-          table[slice][entry] = (table[slice - 1][entry] >> 8) ^ table[0][table[slice - 1][entry] & 0xFFu];
+          table.at(slice).at(entry) =
+            (table.at(slice - 1).at(entry) >> 8u) ^ table.at(0).at(table.at(slice - 1).at(entry) & 0xFFu);
       return table;
     }
     inline constexpr std::array<std::array<std::uint32_t, 256>, 8> crc32c_table{make_crc32c_table()};
@@ -33395,12 +33396,12 @@ namespace csp
         std::uint64_t word{};
         std::memcpy(&word, bytes + index, sizeof(word));
         word ^= crc;
-        crc = crc32c_table[7][word & 0xFFu] ^ crc32c_table[6][(word >> 8) & 0xFFu] ^
-              crc32c_table[5][(word >> 16) & 0xFFu] ^ crc32c_table[4][(word >> 24) & 0xFFu] ^
-              crc32c_table[3][(word >> 32) & 0xFFu] ^ crc32c_table[2][(word >> 40) & 0xFFu] ^
-              crc32c_table[1][(word >> 48) & 0xFFu] ^ crc32c_table[0][(word >> 56) & 0xFFu];
+        crc = crc32c_table.at(7).at(word & 0xFFu) ^ crc32c_table.at(6).at((word >> 8u) & 0xFFu) ^
+              crc32c_table.at(5).at((word >> 16u) & 0xFFu) ^ crc32c_table.at(4).at((word >> 24u) & 0xFFu) ^
+              crc32c_table.at(3).at((word >> 32u) & 0xFFu) ^ crc32c_table.at(2).at((word >> 40u) & 0xFFu) ^
+              crc32c_table.at(1).at((word >> 48u) & 0xFFu) ^ crc32c_table.at(0).at((word >> 56u) & 0xFFu);
       }
-      for (; index < size; ++index) crc = crc32c_table[0][(crc ^ bytes[index]) & 0xFFu] ^ (crc >> 8);
+      for (; index < size; ++index) crc = crc32c_table.at(0).at((crc ^ bytes[index]) & 0xFFu) ^ (crc >> 8u);
       return crc;
     }
 
@@ -33408,38 +33409,38 @@ namespace csp
     inline constexpr std::size_t long_block{8192};
     inline constexpr std::size_t short_block{256};
 
-    constexpr std::uint32_t multmodp(std::uint32_t a, std::uint32_t b)
+    constexpr std::uint32_t multmodp(std::uint32_t left, std::uint32_t right)
     {
       std::uint32_t product{};
       for (;;)
       {
-        if (a & 0x80000000u)
+        if (left & 0x80000000u)
         {
-          product ^= b;
-          if ((a & 0x7FFFFFFFu) == 0) break;
+          product ^= right;
+          if ((left & 0x7FFFFFFFu) == 0) break;
         }
-        a <<= 1;
-        b = (b & 1u) ? (b >> 1) ^ crc32c_poly : (b >> 1);
+        left <<= 1u;
+        right = (right & 1u) ? (right >> 1u) ^ crc32c_poly : (right >> 1u);
       }
       return product;
     }
     constexpr std::array<std::array<std::uint32_t, 256>, 4> make_crc32c_zeros(std::size_t length)
     {
-      std::uint32_t op{0x80000000u};
-      std::uint32_t sq{op >> 4};
+      std::uint32_t operation{0x80000000u};
+      std::uint32_t square{operation >> 4u};
       while (length)
       {
-        sq = multmodp(sq, sq);
-        if (length & 1) op = multmodp(sq, op);
-        length >>= 1;
+        square = multmodp(square, square);
+        if (length & 1u) operation = multmodp(square, operation);
+        length >>= 1u;
       }
       std::array<std::array<std::uint32_t, 256>, 4> table{};
-      for (std::uint32_t n{}; n < 256; ++n)
+      for (std::uint32_t index{}; index < 256; ++index)
       {
-        table[0][n] = multmodp(op, n);
-        table[1][n] = multmodp(op, n << 8);
-        table[2][n] = multmodp(op, n << 16);
-        table[3][n] = multmodp(op, n << 24);
+        table.at(0).at(index) = multmodp(operation, index);
+        table.at(1).at(index) = multmodp(operation, index << 8u);
+        table.at(2).at(index) = multmodp(operation, index << 16u);
+        table.at(3).at(index) = multmodp(operation, index << 24u);
       }
       return table;
     }
@@ -33448,7 +33449,8 @@ namespace csp
     inline std::uint32_t crc32c_shift(const std::array<std::array<std::uint32_t, 256>, 4> &zeros,
                                       const std::uint32_t crc)
     {
-      return zeros[0][crc & 0xFFu] ^ zeros[1][(crc >> 8) & 0xFFu] ^ zeros[2][(crc >> 16) & 0xFFu] ^ zeros[3][crc >> 24];
+      return zeros.at(0).at(crc & 0xFFu) ^ zeros.at(1).at((crc >> 8u) & 0xFFu) ^ zeros.at(2).at((crc >> 16u) & 0xFFu) ^
+             zeros.at(3).at(crc >> 24u);
     }
 
   #if defined(__GNUC__) || defined(__clang__)
@@ -33464,13 +33466,13 @@ namespace csp
         std::uint64_t crc1{}, crc2{};
         for (std::size_t step{}; step < long_block; step += 8)
         {
-          std::uint64_t a{}, b{}, c{};
-          std::memcpy(&a, bytes + index + step, sizeof(a));
-          std::memcpy(&b, bytes + index + step + long_block, sizeof(b));
-          std::memcpy(&c, bytes + index + step + long_block * 2, sizeof(c));
-          crc0 = _mm_crc32_u64(crc0, a);
-          crc1 = _mm_crc32_u64(crc1, b);
-          crc2 = _mm_crc32_u64(crc2, c);
+          std::uint64_t first{}, second{}, third{};
+          std::memcpy(&first, bytes + index + step, sizeof(first));
+          std::memcpy(&second, bytes + index + step + long_block, sizeof(second));
+          std::memcpy(&third, bytes + index + step + (long_block * 2), sizeof(third));
+          crc0 = _mm_crc32_u64(crc0, first);
+          crc1 = _mm_crc32_u64(crc1, second);
+          crc2 = _mm_crc32_u64(crc2, third);
         }
         crc0 = crc32c_shift(crc32c_zeros_long, static_cast<std::uint32_t>(crc0)) ^ crc1;
         crc0 = crc32c_shift(crc32c_zeros_long, static_cast<std::uint32_t>(crc0)) ^ crc2;
@@ -33481,13 +33483,13 @@ namespace csp
         std::uint64_t crc1{}, crc2{};
         for (std::size_t step{}; step < short_block; step += 8)
         {
-          std::uint64_t a{}, b{}, c{};
-          std::memcpy(&a, bytes + index + step, sizeof(a));
-          std::memcpy(&b, bytes + index + step + short_block, sizeof(b));
-          std::memcpy(&c, bytes + index + step + short_block * 2, sizeof(c));
-          crc0 = _mm_crc32_u64(crc0, a);
-          crc1 = _mm_crc32_u64(crc1, b);
-          crc2 = _mm_crc32_u64(crc2, c);
+          std::uint64_t first{}, second{}, third{};
+          std::memcpy(&first, bytes + index + step, sizeof(first));
+          std::memcpy(&second, bytes + index + step + short_block, sizeof(second));
+          std::memcpy(&third, bytes + index + step + (short_block * 2), sizeof(third));
+          crc0 = _mm_crc32_u64(crc0, first);
+          crc1 = _mm_crc32_u64(crc1, second);
+          crc2 = _mm_crc32_u64(crc2, third);
         }
         crc0 = crc32c_shift(crc32c_zeros_short, static_cast<std::uint32_t>(crc0)) ^ crc1;
         crc0 = crc32c_shift(crc32c_zeros_short, static_cast<std::uint32_t>(crc0)) ^ crc2;
@@ -33507,9 +33509,9 @@ namespace csp
     inline bool crc32c_supported()
     {
   #if defined(_MSC_VER)
-      int registers[4]{};
-      __cpuid(registers, 1);
-      return (registers[2] & (1 << 20)) != 0;
+      std::array<int, 4> registers{};
+      __cpuid(registers.data(), 1);
+      return (static_cast<std::uint32_t>(registers.at(2)) & (1u << 20u)) != 0;
   #else
       unsigned int eax{}, ebx{}, ecx{}, edx{};
       if (!__get_cpuid(1u, &eax, &ebx, &ecx, &edx)) return false;
@@ -33525,11 +33527,11 @@ namespace csp
    (build-time) and mapper (run-time) agree on this layout. Each blob carries its own CRC-32C, so the mapper verifies
    blobs lazily on first access rather than scanning the whole file at start-up.
   */
-  inline constexpr char magic[4]{'C', 'S', 'P', '0'};
+  inline constexpr std::array<char, 4> magic{'C', 'S', 'P', '0'};
   inline constexpr std::uint32_t version{2};
   struct header
   {
-    char magic[4];
+    std::array<char, 4> magic;
     std::uint32_t version;
     std::uint32_t flags;
     std::uint32_t count;
@@ -33592,7 +33594,7 @@ namespace csp
   inline void write(const pack &container, const std::filesystem::path &file)
   {
     header head{};
-    std::memcpy(head.magic, magic, sizeof(magic));
+    std::memcpy(head.magic.data(), magic.data(), magic.size());
     head.version = version;
     head.flags = 0;
     head.count = static_cast<std::uint32_t>(container.table.size());
@@ -33643,6 +33645,8 @@ namespace csp
     }
     mapping(const mapping &) = delete;
     mapping &operator=(const mapping &) = delete;
+    mapping(mapping &&) = delete;
+    mapping &operator=(mapping &&) = delete;
 
     void load_directory(const header &head)
     {
@@ -33655,7 +33659,7 @@ namespace csp
       const std::uint64_t content_end{sizeof(header) + head.size};
       for (std::size_t index{}; index < count; ++index)
       {
-        std::memcpy(&entries[index], table + index * sizeof(entry), sizeof(entry));
+        std::memcpy(&entries[index], table + (index * sizeof(entry)), sizeof(entry));
         const entry &record{entries[index]};
         if (record.offset < sizeof(header) || record.size > head.size || record.offset > content_end - record.size)
           throw std::runtime_error("Csp directory entry is out of bounds");
@@ -33680,7 +33684,7 @@ namespace csp
         CloseHandle(handle);
         throw std::runtime_error("Failed to map csp file '" + file.string() + "'");
       }
-      void *view{MapViewOfFile(map, FILE_MAP_READ, 0, 0, 0)};
+      const void *view{MapViewOfFile(map, FILE_MAP_READ, 0, 0, 0)};
       CloseHandle(map);
       CloseHandle(handle);
       if (!view) throw std::runtime_error("Failed to view csp file '" + file.string() + "'");
@@ -33706,8 +33710,8 @@ namespace csp
     const unsigned char *verify(const std::uint64_t offset, const std::uint64_t size)
     {
       const entry *begin{entries};
-      const auto after{std::upper_bound(begin, begin + count, offset, [](std::uint64_t value, const entry &record)
-                                        { return value < record.offset; })};
+      const auto *const after{std::upper_bound(
+        begin, begin + count, offset, [](std::uint64_t value, const entry &record) { return value < record.offset; })};
       if (after == begin) throw std::runtime_error("Csp span is outside any blob");
       const entry *found{after - 1};
       if (size > found->size || offset - found->offset > found->size - size)
@@ -33754,13 +33758,13 @@ namespace csp
     const unsigned char *base{map.base()};
     if (map.size() < sizeof(header)) throw std::runtime_error("Csp file '" + file.string() + "' is truncated");
     const header &head{*reinterpret_cast<const header *>(base)};
-    if (std::memcmp(head.magic, magic, sizeof(magic)) != 0)
+    if (std::memcmp(head.magic.data(), magic.data(), magic.size()) != 0)
       throw std::runtime_error("Csp file '" + file.string() + "' is not a csp file");
     if (head.version != version)
       throw std::runtime_error("Csp file '" + file.string() + "' has an unsupported version");
     if (head.signature != signature)
       throw std::runtime_error("Csp file '" + file.string() + "' does not match this build");
-    if (map.size() != sizeof(header) + head.size + static_cast<std::size_t>(head.count) * sizeof(entry))
+    if (map.size() != sizeof(header) + head.size + (static_cast<std::size_t>(head.count) * sizeof(entry)))
       throw std::runtime_error("Csp file '" + file.string() + "' has an unexpected size");
     map.load_directory(head);
     return map;
@@ -33786,6 +33790,8 @@ namespace csp
 
   inline void unmount(const std::string &name) { mappings().erase(name); }
 }
+// NOLINTEND
+// clang-format on
 
 // CSB 3.0.0
 
@@ -33809,10 +33815,9 @@ namespace csp
 #include <iterator>
 #include <mutex>
 #include <regex>
+#include <span>
 #include <sstream>
 #include <stdexcept>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -33822,7 +33827,7 @@ namespace csp
 #include <variant>
 #include <vector>
 
-enum platform
+enum platform : std::uint8_t
 {
   UNDEFINED,
   WINDOWS,
@@ -33832,23 +33837,21 @@ enum platform
 #if defined(_WIN32)
 
   #if defined(_M_X64) || defined(__amd64__)
-    #define ARCHITECTURE "x64"
+constexpr std::string_view ARCHITECTURE{"x64"};
   #elif defined(_M_IX86)
-    #define ARCHITECTURE "x86"
+constexpr std::string_view ARCHITECTURE{"x86"};
   #elif defined(_M_ARM64)
-    #define ARCHITECTURE "arm64"
+constexpr std::string_view ARCHITECTURE{"arm64"};
   #elif defined(_M_ARM)
-    #define ARCHITECTURE "arm"
+constexpr std::string_view ARCHITECTURE{"arm"};
   #else
-    #define ARCHITECTURE "unknown"
+constexpr std::string_view ARCHITECTURE{"unknown"};
   #endif
-  #define PLATFORM WINDOWS
+constexpr platform PLATFORM{WINDOWS};
 
   #ifndef NOMINMAX
     #define NOMINMAX
   #endif
-  #include <windows.h>
-
   #include <consoleapi2.h>
   #include <processenv.h>
   #include <winbase.h>
@@ -33885,29 +33888,29 @@ inline int terminal_width()
   }
   catch (...)
   {
+    CONSOLE_SCREEN_BUFFER_INFO buffer_info;
+    int columns{80};
+    if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &buffer_info))
+      columns = buffer_info.srWindow.Right - buffer_info.srWindow.Left + 1;
+    set_env("CSB_TERMINAL_WIDTH", std::to_string(columns));
+    return columns;
   }
-  CONSOLE_SCREEN_BUFFER_INFO buffer_info;
-  int columns{80};
-  if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &buffer_info))
-    columns = buffer_info.srWindow.Right - buffer_info.srWindow.Left + 1;
-  set_env("CSB_TERMINAL_WIDTH", std::to_string(columns));
-  return columns;
 }
 
 #elif defined(__linux__)
 
   #if defined(__x86_64__) || defined(__amd64__)
-    #define ARCHITECTURE "x64"
+constexpr std::string_view ARCHITECTURE{"x64"};
   #elif defined(__i386__)
-    #define ARCHITECTURE "x86"
+constexpr std::string_view ARCHITECTURE{"x86"};
   #elif defined(__aarch64__)
-    #define ARCHITECTURE "arm64"
+constexpr std::string_view ARCHITECTURE{"arm64"};
   #elif defined(__arm__)
-    #define ARCHITECTURE "arm"
+constexpr std::string_view ARCHITECTURE{"arm"};
   #else
-    #define ARCHITECTURE "unknown"
+constexpr std::string_view ARCHITECTURE{"unknown"};
   #endif
-  #define PLATFORM LINUX
+constexpr platform PLATFORM{LINUX};
 
   #include <sys/ioctl.h>
   #include <unistd.h>
@@ -33916,6 +33919,7 @@ inline std::string get_env(const std::string &name, const std::string &error_mes
 {
   const char *value{std::getenv(name.c_str())};
   if (!value) return std::string{};
+  if (error_message.empty()) return std::string{value};
   return std::string{value};
 }
 
@@ -33939,20 +33943,20 @@ inline int terminal_width()
   }
   catch (...)
   {
+    int columns{80};
+    struct winsize window{};
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &window) == 0) columns = window.ws_col;
+    set_env("CSB_TERMINAL_WIDTH", std::to_string(columns));
+    return columns;
   }
-  int columns{80};
-  struct winsize window{};
-  if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &window) == 0) columns = window.ws_col;
-  set_env("CSB_TERMINAL_WIDTH", std::to_string(columns));
-  return columns;
 }
 
 #else
-  #define PLATFORM UNDEFINED
-  #define ARCHITECTURE "unknown"
+constexpr std::string_view ARCHITECTURE{"unknown"};
+constexpr platform PLATFORM{UNDEFINED};
 #endif
 
-enum print_stream
+enum print_stream : std::uint8_t
 {
   COUT,
   CERR,
@@ -34012,12 +34016,12 @@ namespace csb
 
     inline std::string big_section_divider()
     {
-      static std::string divider = std::string(static_cast<size_t>(terminal_width()), '=');
+      static const std::string divider = std::string(static_cast<size_t>(terminal_width()), '=');
       return divider;
     }
     inline std::string small_section_divider()
     {
-      static std::string divider = std::string(static_cast<size_t>(terminal_width()), '-');
+      static const std::string divider = std::string(static_cast<size_t>(terminal_width()), '-');
       return divider;
     }
 
@@ -34133,6 +34137,8 @@ namespace csb
    * | `link`: Links all object files into the target artifact.
    * | `generate_compile_commands`: Generates a compile_commands.json file for LSP support.
    * | `generate_clangd`: Generates a .clangd file for clangd configuration.
+   * | `generate_clang_tidy`: Generates a .clang-tidy file based on a configuration passed to it.
+   * | `lint`: Lints all source/header files using clang with an optional version anchor, overrides and excludes.
    * | `generate_clang_format`: Generates a .clang-format file based on a configuration passed to it.
    * | `format`: Formats all source/header files using clang with an optional version anchor, overrides and excludes.
    * | `subproject_install`: Installs all specified csb subprojects.
@@ -34221,7 +34227,7 @@ namespace csb
   template <print_stream stream, typename... message_arguments>
   inline void print(std::format_string<message_arguments...> message, message_arguments &&...args)
   {
-    std::lock_guard<std::mutex> lock(utility::output_mutex);
+    const std::scoped_lock<std::mutex> lock(utility::output_mutex);
     auto formatted_message{std::format(message, std::forward<message_arguments>(args)...)};
     auto &choice{[]() -> std::ostream &
                  {
@@ -34241,15 +34247,38 @@ namespace csb
   // Converts a byte to its hexadecimal string representation.
   inline std::string byte_to_hex(std::byte character)
   {
-    std::stringstream ss{};
-    ss << "0x" << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(character);
-    return ss.str();
+    std::stringstream stream{};
+    stream << "0x" << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(character);
+    return stream.str();
   };
 
   // Converts a nlohmann::json object to a YAML string.
   inline std::string json_to_yaml(const nlohmann::json &object, const std::size_t indent = 0)
   {
-    auto needs_quotes{[](const std::string &s) { return s.find_first_of(":#\n\"'") != std::string::npos; }};
+    auto needs_quotes{[](const std::string &string)
+                      {
+                        if (string.empty()) return true;
+                        if (string.find_first_of(":#\n\"'") != std::string::npos) return true;
+                        if (std::string_view{"*&!|>%@`[]{},"}.find(string.front()) != std::string_view::npos)
+                          return true;
+                        return (string.front() == '-' || string.front() == '?') &&
+                               (string.size() == 1 || string.at(1) == ' ');
+                      }};
+    auto quote{[](const std::string &string)
+               {
+                 std::string quoted{"\""};
+                 for (const char character : string)
+                 {
+                   if (character == '\n')
+                   {
+                     quoted += "\\n";
+                     continue;
+                   }
+                   if (character == '\\' || character == '"') quoted += '\\';
+                   quoted += character;
+                 }
+                 return quoted + "\"";
+               }};
     const std::string indent_str(indent, ' ');
     std::string result{};
     if (object.is_object())
@@ -34259,11 +34288,8 @@ namespace csb
         {
           if (value.is_string())
           {
-            auto s{value.get<std::string>()};
-            if (needs_quotes(s))
-              result += indent_str + key + ": \"" + s + "\"\n";
-            else
-              result += indent_str + key + ": " + s + "\n";
+            auto string{value.get<std::string>()};
+            result += indent_str + key + ": " + (needs_quotes(string) ? quote(string) : string) + "\n";
           }
           else
             result += indent_str + key + ": " + value.dump() + "\n";
@@ -34280,7 +34306,10 @@ namespace csb
         if (item.is_primitive())
         {
           if (item.is_string())
-            result += indent_str + "- " + item.get<std::string>() + "\n";
+          {
+            auto string{item.get<std::string>()};
+            result += indent_str + "- " + (needs_quotes(string) ? quote(string) : string) + "\n";
+          }
           else
             result += indent_str + "- " + item.dump() + "\n";
         }
@@ -34299,7 +34328,7 @@ namespace csb
     auto start{input.find_first_not_of('\n')};
     auto end{input.find_last_not_of('\n')};
     if (start == std::string::npos)
-      return std::string();
+      return {};
     else
       return input.substr(start, end - start + 1);
   }
@@ -34344,9 +34373,7 @@ namespace csb
   // Checks if specified files or directories exist.
   inline bool exists(const std::vector<std::filesystem::path> &paths)
   {
-    for (const auto &path : paths)
-      if (!std::filesystem::exists(path)) return false;
-    return true;
+    return std::ranges::all_of(paths, [](const auto &path) { return std::filesystem::exists(path); });
   }
   // Checks if specified files or directories exist.
   inline bool exists(std::initializer_list<std::filesystem::path> paths)
@@ -34482,7 +34509,7 @@ namespace csb
                const std::vector<std::filesystem::path> &overrides = {}, bool recursive = true)
   {
     std::vector<std::filesystem::path> files{};
-    auto process_directory{[&](auto iterator)
+    auto process_directory{[&](const auto &iterator)
                            {
                              for (const auto &entry : iterator)
                                if (entry.is_regular_file())
@@ -34537,8 +34564,9 @@ namespace csb
     if constexpr (std::same_as<type, std::vector<std::byte>>)
     {
       type container{};
-      std::ifstream input_file(file, std::ios::binary | std::ios::ate);
+      std::ifstream input_file(file, std::ios::binary);
       if (!input_file.is_open()) throw std::runtime_error("Failed to open file: " + file.string());
+      input_file.seekg(0, std::ios::end);
       const std::streamsize size{input_file.tellg()};
       input_file.seekg(0, std::ios::beg);
       container.resize(static_cast<size_t>(size));
@@ -34554,17 +34582,18 @@ namespace csb
       image result{};
       auto *data{stbi_load(file.string().c_str(), &result.width, &result.height, &result.channels, 0)};
       if (!data) throw std::runtime_error("Failed to load image: " + file.string());
-      result.data =
-        std::vector<std::byte>(reinterpret_cast<std::byte *>(data),
-                               reinterpret_cast<std::byte *>(data) + (result.width * result.height * result.channels));
+      result.data = std::vector<std::byte>(reinterpret_cast<std::byte *>(data),
+                                           reinterpret_cast<std::byte *>(data) +
+                                             (static_cast<ptrdiff_t>(result.width) * result.height * result.channels));
       stbi_image_free(data);
       return result;
     }
     else if constexpr (std::same_as<type, aseprite>)
     {
       if (!std::filesystem::exists(file)) throw std::runtime_error("File does not exist: " + file.string());
-      std::ifstream input(file, std::ios::binary | std::ios::ate);
+      std::ifstream input(file, std::ios::binary);
       if (!input.is_open()) throw std::runtime_error("Failed to open file: " + file.string());
+      input.seekg(0, std::ios::end);
       const std::streamsize total{input.tellg()};
       input.seekg(0, std::ios::beg);
       std::vector<unsigned char> bytes(static_cast<std::size_t>(total));
@@ -34572,58 +34601,64 @@ namespace csb
         throw std::runtime_error("Failed to read file: " + file.string());
       input.close();
 
-      std::size_t cursor{};
-      const auto require{[&](std::size_t count)
-                         {
-                           if (cursor + count > bytes.size())
-                             throw std::runtime_error("Malformed Aseprite file (unexpected end): " + file.string());
-                         }};
-      const auto byte{[&]() -> std::uint8_t
-                      {
-                        require(1);
-                        return bytes[cursor++];
-                      }};
-      const auto word{[&]() -> std::uint16_t
-                      {
-                        require(2);
-                        const std::uint16_t value(
-                          static_cast<std::uint16_t>(static_cast<std::uint16_t>(bytes[cursor]) |
-                                                     static_cast<std::uint16_t>(bytes[cursor + 1]) << 8));
-                        cursor += 2;
-                        return value;
-                      }};
-      const auto dword{[&]() -> std::uint32_t
-                       {
-                         require(4);
-                         const std::uint32_t value(static_cast<std::uint32_t>(bytes[cursor]) |
-                                                   static_cast<std::uint32_t>(bytes[cursor + 1]) << 8 |
-                                                   static_cast<std::uint32_t>(bytes[cursor + 2]) << 16 |
-                                                   static_cast<std::uint32_t>(bytes[cursor + 3]) << 24);
-                         cursor += 4;
-                         return value;
-                       }};
-      const auto integer{[&]() -> std::int16_t { return static_cast<std::int16_t>(word()); }};
-      const auto string{[&]() -> std::string
-                        {
-                          const std::uint16_t length{word()};
-                          require(length);
-                          std::string value(reinterpret_cast<const char *>(bytes.data() + cursor), length);
-                          cursor += length;
-                          return value;
-                        }};
-      const auto skip{[&](std::size_t count)
-                      {
-                        require(count);
-                        cursor += count;
-                      }};
+      struct reader_state
+      {
+        const std::vector<unsigned char> &bytes;
+        const std::filesystem::path &file;
+        std::size_t cursor{};
 
-      dword();
-      if (word() != 0xA5E0) throw std::runtime_error("Not an Aseprite file: " + file.string());
-      const std::uint16_t frame_count{word()};
-      const std::uint16_t canvas_width{word()};
-      const std::uint16_t canvas_height{word()};
-      if (word() != 32) throw std::runtime_error("Aseprite file must be 32-bit RGBA: " + file.string());
-      cursor = 128;
+        void require(const std::size_t count) const
+        {
+          if (cursor + count > bytes.size())
+            throw std::runtime_error("Malformed Aseprite file (unexpected end): " + file.string());
+        }
+        std::uint8_t byte()
+        {
+          require(1);
+          return bytes.at(cursor++);
+        }
+        std::uint16_t word()
+        {
+          require(2);
+          const auto value(static_cast<std::uint16_t>(static_cast<std::uint32_t>(bytes.at(cursor)) |
+                                                      static_cast<std::uint32_t>(bytes.at(cursor + 1)) << 8u));
+          cursor += 2;
+          return value;
+        }
+        std::uint32_t dword()
+        {
+          require(4);
+          const auto value(static_cast<std::uint32_t>(bytes.at(cursor)) |
+                           static_cast<std::uint32_t>(bytes.at(cursor + 1)) << 8u |
+                           static_cast<std::uint32_t>(bytes.at(cursor + 2)) << 16u |
+                           static_cast<std::uint32_t>(bytes.at(cursor + 3)) << 24u);
+          cursor += 4;
+          return value;
+        }
+        std::int16_t integer() { return static_cast<std::int16_t>(word()); }
+        std::string string()
+        {
+          const std::uint16_t length{word()};
+          require(length);
+          std::string value(reinterpret_cast<const char *>(bytes.data() + cursor), length);
+          cursor += length;
+          return value;
+        }
+        void skip(const std::size_t count)
+        {
+          require(count);
+          cursor += count;
+        }
+      };
+      reader_state reader{bytes, file};
+
+      reader.dword();
+      if (reader.word() != 0xA5E0) throw std::runtime_error("Not an Aseprite file: " + file.string());
+      const std::uint16_t frame_count{reader.word()};
+      const std::uint16_t canvas_width{reader.word()};
+      const std::uint16_t canvas_height{reader.word()};
+      if (reader.word() != 32) throw std::runtime_error("Aseprite file must be 32-bit RGBA: " + file.string());
+      reader.cursor = 128;
 
       struct layer_info
       {
@@ -34660,37 +34695,37 @@ namespace csb
 
       for (std::uint16_t frame{}; frame < frame_count; ++frame)
       {
-        const std::size_t frame_start{cursor};
-        const std::uint32_t frame_bytes{dword()};
-        if (word() != 0xF1FA) throw std::runtime_error("Malformed Aseprite frame header: " + file.string());
-        const std::uint16_t old_chunks{word()};
-        durations[frame] = static_cast<double>(word()) / 1000.0;
-        skip(2);
-        const std::uint32_t new_chunks{dword()};
+        const std::size_t frame_start{reader.cursor};
+        const std::uint32_t frame_bytes{reader.dword()};
+        if (reader.word() != 0xF1FA) throw std::runtime_error("Malformed Aseprite frame header: " + file.string());
+        const std::uint16_t old_chunks{reader.word()};
+        durations.at(frame) = static_cast<double>(reader.word()) / 1000.0;
+        reader.skip(2);
+        const std::uint32_t new_chunks{reader.dword()};
         const std::uint32_t chunks{new_chunks != 0 ? new_chunks : old_chunks};
 
         for (std::uint32_t chunk{}; chunk < chunks; ++chunk)
         {
-          const std::size_t chunk_start{cursor};
-          const std::uint32_t chunk_size{dword()};
-          const std::uint16_t chunk_type{word()};
+          const std::size_t chunk_start{reader.cursor};
+          const std::uint32_t chunk_size{reader.dword()};
+          const std::uint16_t chunk_type{reader.word()};
           if (chunk_type == 0x2004)
           {
-            const std::uint16_t flags{word()};
-            const std::uint16_t kind{word()};
-            const std::uint16_t child{word()};
-            word();
-            word();
-            const std::uint16_t blend{word()};
-            const std::uint8_t opacity{byte()};
-            skip(3);
-            const std::string name{string()};
+            const std::uint16_t flags{reader.word()};
+            const std::uint16_t kind{reader.word()};
+            const std::uint16_t child{reader.word()};
+            reader.word();
+            reader.word();
+            const std::uint16_t blend{reader.word()};
+            const std::uint8_t opacity{reader.byte()};
+            reader.skip(3);
+            const std::string name{reader.string()};
             layer_info info{};
             info.name = name;
             info.kind = kind;
             info.blend = blend;
             info.opacity = opacity;
-            info.visible = (flags & 1) != 0;
+            info.visible = (flags & 1u) != 0;
             if (child == 0)
             {
               if (kind != 1)
@@ -34716,41 +34751,41 @@ namespace csb
           }
           else if (chunk_type == 0x2018)
           {
-            const std::uint16_t count{word()};
-            skip(8);
+            const std::uint16_t count{reader.word()};
+            reader.skip(8);
             for (std::uint16_t entry{}; entry < count; ++entry)
             {
               tag_info tag{};
-              tag.from = word();
-              tag.to = word();
-              byte();
-              word();
-              skip(6);
-              skip(3);
-              byte();
-              tag.name = string();
+              tag.from = reader.word();
+              tag.to = reader.word();
+              reader.byte();
+              reader.word();
+              reader.skip(6);
+              reader.skip(3);
+              reader.byte();
+              tag.name = reader.string();
               tags.push_back(tag);
             }
           }
           else if (chunk_type == 0x2005)
           {
-            const std::uint16_t layer{word()};
+            const std::uint16_t layer{reader.word()};
             cel_info cel{};
-            cel.x = integer();
-            cel.y = integer();
-            byte();
-            cel.kind = word();
-            integer();
-            skip(5);
+            cel.x = reader.integer();
+            cel.y = reader.integer();
+            reader.byte();
+            cel.kind = reader.word();
+            reader.integer();
+            reader.skip(5);
             if (cel.kind == 0 || cel.kind == 2)
             {
-              cel.width = word();
-              cel.height = word();
-              cel.offset = cursor;
-              cel.size = chunk_start + chunk_size - cursor;
+              cel.width = reader.word();
+              cel.height = reader.word();
+              cel.offset = reader.cursor;
+              cel.size = chunk_start + chunk_size - reader.cursor;
             }
             else if (cel.kind == 1)
-              cel.link = word();
+              cel.link = reader.word();
             else
               throw std::runtime_error("Aseprite tilemap cels are not supported: " + file.string());
             cel.present = true;
@@ -34758,23 +34793,23 @@ namespace csb
           }
           else if (chunk_type == 0x2022)
           {
-            const std::uint32_t keys{dword()};
-            dword();
-            dword();
-            const std::string name{string()};
+            const std::uint32_t keys{reader.dword()};
+            reader.dword();
+            reader.dword();
+            const std::string name{reader.string()};
             if (keys > 0)
             {
-              dword();
-              const auto x{static_cast<std::int32_t>(dword())};
-              const auto y{static_cast<std::int32_t>(dword())};
-              const std::uint32_t slice_width{dword()};
-              const std::uint32_t slice_height{dword()};
-              slices.push_back({name, x, y, slice_width, slice_height});
+              reader.dword();
+              const auto left{static_cast<std::int32_t>(reader.dword())};
+              const auto top{static_cast<std::int32_t>(reader.dword())};
+              const std::uint32_t slice_width{reader.dword()};
+              const std::uint32_t slice_height{reader.dword()};
+              slices.push_back({name, left, top, slice_width, slice_height});
             }
           }
-          cursor = chunk_start + chunk_size;
+          reader.cursor = chunk_start + chunk_size;
         }
-        cursor = frame_start + frame_bytes;
+        reader.cursor = frame_start + frame_bytes;
       }
 
       if (!image_group)
@@ -34782,13 +34817,13 @@ namespace csb
       if (tags.empty()) throw std::runtime_error("Aseprite file must contain at least one tag: " + file.string());
       for (std::size_t first{}; first < tags.size(); ++first)
         for (std::size_t second{first + 1}; second < tags.size(); ++second)
-          if (tags[first].name == tags[second].name)
-            throw std::runtime_error("Duplicate Aseprite tag name '" + tags[first].name + "': " + file.string());
+          if (tags.at(first).name == tags.at(second).name)
+            throw std::runtime_error("Duplicate Aseprite tag name '" + tags.at(first).name + "': " + file.string());
       for (std::size_t first{}; first < layers.size(); ++first)
-        if (layers[first].hitbox)
+        if (layers.at(first).hitbox)
           for (std::size_t second{first + 1}; second < layers.size(); ++second)
-            if (layers[second].hitbox && layers[first].name == layers[second].name)
-              throw std::runtime_error("Duplicate Aseprite hitbox layer '" + layers[first].name +
+            if (layers.at(second).hitbox && layers.at(first).name == layers.at(second).name)
+              throw std::runtime_error("Duplicate Aseprite hitbox layer '" + layers.at(first).name +
                                        "': " + file.string());
       if (std::none_of(layers.begin(), layers.end(), [](const layer_info &layer) { return layer.image; }))
         throw std::runtime_error("Aseprite 'image' group has no layers: " + file.string());
@@ -34796,14 +34831,14 @@ namespace csb
       std::vector<cel_info> grid(static_cast<std::size_t>(layers.size()) * frame_count);
       for (const auto &[layer, frame, cel] : raw_cels)
         if (layer < layers.size() && frame < frame_count)
-          grid[static_cast<std::size_t>(layer) * frame_count + frame] = cel;
+          grid.at((static_cast<std::size_t>(layer) * frame_count) + frame) = cel;
       const auto resolve{[&](std::size_t layer, std::uint16_t frame) -> const cel_info *
                          {
-                           const cel_info &cel{grid[layer * frame_count + frame]};
+                           const cel_info &cel{grid.at((layer * frame_count) + frame)};
                            if (!cel.present) return nullptr;
                            if (cel.kind != 1) return &cel;
                            if (cel.link >= frame_count) return nullptr;
-                           const cel_info &linked{grid[layer * frame_count + cel.link]};
+                           const cel_info &linked{grid.at((layer * frame_count) + cel.link)};
                            return linked.present ? &linked : nullptr;
                          }};
       const auto decode{[&](const cel_info &cel) -> std::vector<unsigned char>
@@ -34832,12 +34867,20 @@ namespace csb
           const int height{static_cast<int>(cel.height)};
           std::vector<unsigned char> mask(static_cast<std::size_t>(width) * height);
           for (int pixel{}; pixel < width * height; ++pixel)
-            mask[static_cast<std::size_t>(pixel)] = pixels[static_cast<std::size_t>(pixel) * 4 + 3] != 0 ? 1 : 0;
-          const auto solid{[&](int x, int y)
-                           {
-                             return x >= 0 && y >= 0 && x < width && y < height &&
-                                    mask[static_cast<std::size_t>(y) * width + x] != 0;
-                           }};
+            mask.at(static_cast<std::size_t>(pixel)) =
+              pixels.at((static_cast<std::size_t>(pixel) * 4) + 3) != 0 ? 1 : 0;
+          struct solidity
+          {
+            const std::vector<unsigned char> &mask;
+            int width{}, height{};
+
+            bool operator()(const int left, const int top) const
+            {
+              return left >= 0 && top >= 0 && left < width && top < height &&
+                     mask.at((static_cast<std::size_t>(top) * width) + left) != 0;
+            }
+          };
+          const solidity solid{mask, width, height};
 
           struct corner
           {
@@ -34845,15 +34888,16 @@ namespace csb
             bool up;
           };
           const int lattice_height{height + 1};
-          std::vector<int> at(static_cast<std::size_t>(width + 1) * lattice_height, -1);
+          std::vector<int> here(static_cast<std::size_t>(width + 1) * lattice_height, -1);
           std::vector<corner> corners{};
-          for (int y{}; y <= height; ++y)
-            for (int x{}; x <= width; ++x)
+          for (int top{}; top <= height; ++top)
+            for (int left{}; left <= width; ++left)
             {
-              const bool tl{solid(x - 1, y - 1)}, tr{solid(x, y - 1)}, bl{solid(x - 1, y)}, br{solid(x, y)};
-              if (tl + tr + bl + br != 3) continue;
-              at[static_cast<std::size_t>(x) * lattice_height + y] = static_cast<int>(corners.size());
-              corners.push_back({x, y, !bl || !br});
+              const bool top_left{solid(left - 1, top - 1)}, top_right{solid(left, top - 1)},
+                bottom_left{solid(left - 1, top)}, bottom_right{solid(left, top)};
+              if (top_left + top_right + bottom_left + bottom_right != 3) continue;
+              here.at((static_cast<std::size_t>(left) * lattice_height) + top) = static_cast<int>(corners.size());
+              corners.push_back({left, top, !bottom_left || !bottom_right});
             }
 
           struct chord
@@ -34861,132 +34905,141 @@ namespace csb
             int line, lo, hi, a, b;
           };
           std::vector<chord> horizontal{}, vertical{};
-          for (int y{}; y <= height; ++y)
-            for (int c{}; c < width;)
+          for (int top{}; top <= height; ++top)
+            for (int left{}; left < width;)
             {
-              if (!(solid(c, y - 1) && solid(c, y)))
+              if (!(solid(left, top - 1) && solid(left, top)))
               {
-                ++c;
+                ++left;
                 continue;
               }
-              const int lo{c};
-              while (c < width && solid(c, y - 1) && solid(c, y)) ++c;
-              const int a{at[static_cast<std::size_t>(lo) * lattice_height + y]};
-              const int b{at[static_cast<std::size_t>(c) * lattice_height + y]};
-              if (a >= 0 && b >= 0) horizontal.push_back({y, lo, c, a, b});
+              const int low{left};
+              while (left < width && solid(left, top - 1) && solid(left, top)) ++left;
+              const int first{here.at((static_cast<std::size_t>(low) * lattice_height) + top)};
+              const int second{here.at((static_cast<std::size_t>(left) * lattice_height) + top)};
+              if (first >= 0 && second >= 0) horizontal.push_back({top, low, left, first, second});
             }
-          for (int x{}; x <= width; ++x)
-            for (int r{}; r < height;)
+          for (int left{}; left <= width; ++left)
+            for (int top{}; top < height;)
             {
-              if (!(solid(x - 1, r) && solid(x, r)))
+              if (!(solid(left - 1, top) && solid(left, top)))
               {
-                ++r;
+                ++top;
                 continue;
               }
-              const int lo{r};
-              while (r < height && solid(x - 1, r) && solid(x, r)) ++r;
-              const int a{at[static_cast<std::size_t>(x) * lattice_height + lo]};
-              const int b{at[static_cast<std::size_t>(x) * lattice_height + r]};
-              if (a >= 0 && b >= 0) vertical.push_back({x, lo, r, a, b});
+              const int low{top};
+              while (top < height && solid(left - 1, top) && solid(left, top)) ++top;
+              const int first{here.at((static_cast<std::size_t>(left) * lattice_height) + low)};
+              const int second{here.at((static_cast<std::size_t>(left) * lattice_height) + top)};
+              if (first >= 0 && second >= 0) vertical.push_back({left, low, top, first, second});
             }
 
-          const int nh{static_cast<int>(horizontal.size())}, nv{static_cast<int>(vertical.size())};
-          std::vector<std::vector<int>> conflicts(static_cast<std::size_t>(nh));
-          for (int i{}; i < nh; ++i)
-            for (int j{}; j < nv; ++j)
+          const int num_horizontal{static_cast<int>(horizontal.size())},
+            num_vertical{static_cast<int>(vertical.size())};
+          std::vector<std::vector<int>> conflicts(static_cast<std::size_t>(num_horizontal));
+          for (int i{}; i < num_horizontal; ++i)
+            for (int j{}; j < num_vertical; ++j)
             {
-              const int a{horizontal[static_cast<std::size_t>(i)].lo}, b{horizontal[static_cast<std::size_t>(i)].hi};
-              const int y{horizontal[static_cast<std::size_t>(i)].line};
-              const int x{vertical[static_cast<std::size_t>(j)].line};
-              const int c{vertical[static_cast<std::size_t>(j)].lo}, d{vertical[static_cast<std::size_t>(j)].hi};
-              const bool cross{a < x && x < b && c < y && y < d};
-              const bool share{(x == a || x == b) && (y == c || y == d)};
-              if (cross || share) conflicts[static_cast<std::size_t>(i)].push_back(j);
+              const int first{horizontal.at(static_cast<std::size_t>(i)).lo},
+                second{horizontal.at(static_cast<std::size_t>(i)).hi};
+              const int third{horizontal.at(static_cast<std::size_t>(i)).line};
+              const int fourth{vertical.at(static_cast<std::size_t>(j)).line};
+              const int fifth{vertical.at(static_cast<std::size_t>(j)).lo},
+                sixth{vertical.at(static_cast<std::size_t>(j)).hi};
+              const bool cross{first < fourth && fourth < second && fifth < third && third < sixth};
+              const bool share{(fourth == first || fourth == second) && (third == fifth || third == sixth)};
+              if (cross || share) conflicts.at(static_cast<std::size_t>(i)).push_back(j);
             }
 
-          std::vector<int> match_h(static_cast<std::size_t>(nh), -1), match_v(static_cast<std::size_t>(nv), -1);
-          std::vector<unsigned char> seen(static_cast<std::size_t>(nv));
-          const std::function<bool(int)> augment{[&](int h) -> bool
+          std::vector<int> match_h(static_cast<std::size_t>(num_horizontal), -1),
+            match_v(static_cast<std::size_t>(num_vertical), -1);
+          std::vector<unsigned char> seen(static_cast<std::size_t>(num_vertical));
+          const std::function<bool(int)> augment{[&](int horizontal) -> bool
                                                  {
-                                                   for (const int v : conflicts[static_cast<std::size_t>(h)])
+                                                   for (const int vertical :
+                                                        conflicts.at(static_cast<std::size_t>(horizontal)))
                                                    {
-                                                     if (seen[static_cast<std::size_t>(v)]) continue;
-                                                     seen[static_cast<std::size_t>(v)] = 1;
-                                                     if (match_v[static_cast<std::size_t>(v)] < 0 ||
-                                                         augment(match_v[static_cast<std::size_t>(v)]))
+                                                     if (seen.at(static_cast<std::size_t>(vertical))) continue;
+                                                     seen.at(static_cast<std::size_t>(vertical)) = 1;
+                                                     if (match_v.at(static_cast<std::size_t>(vertical)) < 0 ||
+                                                         augment(match_v.at(static_cast<std::size_t>(vertical))))
                                                      {
-                                                       match_v[static_cast<std::size_t>(v)] = h;
-                                                       match_h[static_cast<std::size_t>(h)] = v;
+                                                       match_v.at(static_cast<std::size_t>(vertical)) = horizontal;
+                                                       match_h.at(static_cast<std::size_t>(horizontal)) = vertical;
                                                        return true;
                                                      }
                                                    }
                                                    return false;
                                                  }};
-          for (int h{}; h < nh; ++h)
+          for (int horizontal{}; horizontal < num_horizontal; ++horizontal)
           {
-            std::fill(seen.begin(), seen.end(), static_cast<unsigned char>(0));
-            augment(h);
+            std::ranges::fill(seen, static_cast<unsigned char>(0));
+            augment(horizontal);
           }
-          std::vector<unsigned char> visited_h(static_cast<std::size_t>(nh)), visited_v(static_cast<std::size_t>(nv));
-          const std::function<void(int)> mark{[&](int h)
+          std::vector<unsigned char> visited_h(static_cast<std::size_t>(num_horizontal)),
+            visited_v(static_cast<std::size_t>(num_vertical));
+          const std::function<void(int)> mark{[&](int horizontal)
                                               {
-                                                visited_h[static_cast<std::size_t>(h)] = 1;
-                                                for (const int v : conflicts[static_cast<std::size_t>(h)])
+                                                visited_h.at(static_cast<std::size_t>(horizontal)) = 1;
+                                                for (const int vertical :
+                                                     conflicts.at(static_cast<std::size_t>(horizontal)))
                                                 {
-                                                  if (visited_v[static_cast<std::size_t>(v)]) continue;
-                                                  visited_v[static_cast<std::size_t>(v)] = 1;
-                                                  const int next{match_v[static_cast<std::size_t>(v)]};
-                                                  if (next >= 0 && !visited_h[static_cast<std::size_t>(next)])
+                                                  if (visited_v.at(static_cast<std::size_t>(vertical))) continue;
+                                                  visited_v.at(static_cast<std::size_t>(vertical)) = 1;
+                                                  const int next{match_v.at(static_cast<std::size_t>(vertical))};
+                                                  if (next >= 0 && !visited_h.at(static_cast<std::size_t>(next)))
                                                     mark(next);
                                                 }
                                               }};
-          for (int h{}; h < nh; ++h)
-            if (match_h[static_cast<std::size_t>(h)] < 0 && !visited_h[static_cast<std::size_t>(h)]) mark(h);
+          for (int horizontal{}; horizontal < num_horizontal; ++horizontal)
+            if (match_h.at(static_cast<std::size_t>(horizontal)) < 0 &&
+                !visited_h.at(static_cast<std::size_t>(horizontal)))
+              mark(horizontal);
 
           std::vector<unsigned char> vertical_wall(static_cast<std::size_t>(width + 1) * height, 0);
           std::vector<unsigned char> horizontal_wall(static_cast<std::size_t>(width) * (height + 1), 0);
-          const auto vwall{[&](int x, int r) -> unsigned char &
-                           { return vertical_wall[static_cast<std::size_t>(x) * height + r]; }};
-          const auto hwall{[&](int c, int y) -> unsigned char &
-                           { return horizontal_wall[static_cast<std::size_t>(c) * (height + 1) + y]; }};
+          const auto vwall{[&](int left, int top) -> unsigned char &
+                           { return vertical_wall.at((static_cast<std::size_t>(left) * height) + top); }};
+          const auto hwall{[&](int left, int top) -> unsigned char &
+                           { return horizontal_wall.at((static_cast<std::size_t>(left) * (height + 1)) + top); }};
           std::vector<unsigned char> resolved(corners.size(), 0);
-          for (int i{}; i < nh; ++i)
-            if (visited_h[static_cast<std::size_t>(i)])
+          for (int i{}; i < num_horizontal; ++i)
+            if (visited_h.at(static_cast<std::size_t>(i)))
             {
-              const chord &ch{horizontal[static_cast<std::size_t>(i)]};
-              for (int c{ch.lo}; c < ch.hi; ++c) hwall(c, ch.line) = 1;
-              resolved[static_cast<std::size_t>(ch.a)] = resolved[static_cast<std::size_t>(ch.b)] = 1;
+              const chord &current{horizontal.at(static_cast<std::size_t>(i))};
+              for (int mid{current.lo}; mid < current.hi; ++mid) hwall(mid, current.line) = 1;
+              resolved.at(static_cast<std::size_t>(current.a)) = resolved.at(static_cast<std::size_t>(current.b)) = 1;
             }
-          for (int j{}; j < nv; ++j)
-            if (!visited_v[static_cast<std::size_t>(j)])
+          for (int j{}; j < num_vertical; ++j)
+            if (!visited_v.at(static_cast<std::size_t>(j)))
             {
-              const chord &ch{vertical[static_cast<std::size_t>(j)]};
-              for (int r{ch.lo}; r < ch.hi; ++r) vwall(ch.line, r) = 1;
-              resolved[static_cast<std::size_t>(ch.a)] = resolved[static_cast<std::size_t>(ch.b)] = 1;
+              const chord &current{vertical.at(static_cast<std::size_t>(j))};
+              for (int mid{current.lo}; mid < current.hi; ++mid) vwall(current.line, mid) = 1;
+              resolved.at(static_cast<std::size_t>(current.a)) = resolved.at(static_cast<std::size_t>(current.b)) = 1;
             }
           for (std::size_t k{}; k < corners.size(); ++k)
           {
-            if (resolved[k]) continue;
-            const int x{corners[k].x};
-            if (corners[k].up)
-              for (int r{corners[k].y - 1}; r >= 0; --r)
+            if (resolved.at(k)) continue;
+            const int left{corners.at(k).x};
+            if (corners.at(k).up)
+              for (int top{corners.at(k).y - 1}; top >= 0; --top)
               {
-                if (!solid(x - 1, r) || !solid(x, r) || vwall(x, r)) break;
-                vwall(x, r) = 1;
-                if (hwall(x - 1, r) || hwall(x, r)) break;
+                if (!solid(left - 1, top) || !solid(left, top) || vwall(left, top)) break;
+                vwall(left, top) = 1;
+                if (hwall(left - 1, top) || hwall(left, top)) break;
               }
             else
-              for (int r{corners[k].y}; r < height; ++r)
+              for (int top{corners.at(k).y}; top < height; ++top)
               {
-                if (!solid(x - 1, r) || !solid(x, r) || vwall(x, r)) break;
-                vwall(x, r) = 1;
-                if (hwall(x - 1, r + 1) || hwall(x, r + 1)) break;
+                if (!solid(left - 1, top) || !solid(left, top) || vwall(left, top)) break;
+                vwall(left, top) = 1;
+                if (hwall(left - 1, top + 1) || hwall(left, top + 1)) break;
               }
           }
 
           std::vector<unsigned char> covered(static_cast<std::size_t>(width) * height, 0);
-          const auto cover{[&](int x, int y) -> unsigned char &
-                           { return covered[static_cast<std::size_t>(y) * width + x]; }};
+          const auto cover{[&](int left, int top) -> unsigned char &
+                           { return covered.at((static_cast<std::size_t>(top) * width) + left); }};
           std::vector<std::array<double, 4>> rectangles{};
           for (int row{}; row < height; ++row)
             for (int column{}; column < width; ++column)
@@ -34997,16 +35050,16 @@ namespace csb
               int bottom{row + 1};
               while (bottom < height)
               {
-                bool ok{true};
-                for (int c{column}; c < right && ok; ++c)
-                  if (!solid(c, bottom) || cover(c, bottom) || hwall(c, bottom)) ok = false;
-                for (int c{column + 1}; c < right && ok; ++c)
-                  if (vwall(c, bottom)) ok = false;
-                if (!ok) break;
+                bool fine{true};
+                for (int current{column}; current < right && fine; ++current)
+                  if (!solid(current, bottom) || cover(current, bottom) || hwall(current, bottom)) fine = false;
+                for (int current{column + 1}; current < right && fine; ++current)
+                  if (vwall(current, bottom)) fine = false;
+                if (!fine) break;
                 ++bottom;
               }
-              for (int r{row}; r < bottom; ++r)
-                for (int c{column}; c < right; ++c) cover(c, r) = 1;
+              for (int top{row}; top < bottom; ++top)
+                for (int left{column}; left < right; ++left) cover(left, top) = 1;
               rectangles.push_back({static_cast<double>(cel.x + column), static_cast<double>(cel.y + row),
                                     static_cast<double>(cel.x + right), static_cast<double>(cel.y + bottom)});
             }
@@ -35019,40 +35072,41 @@ namespace csb
       for (std::uint16_t frame{}; frame < frame_count; ++frame)
         for (std::size_t layer{}; layer < layers.size(); ++layer)
         {
-          if (!layers[layer].image || !layers[layer].visible) continue;
-          if (layers[layer].blend != 0)
-            throw std::runtime_error("Unsupported Aseprite blend mode on layer '" + layers[layer].name +
+          if (!layers.at(layer).image || !layers.at(layer).visible) continue;
+          if (layers.at(layer).blend != 0)
+            throw std::runtime_error("Unsupported Aseprite blend mode on layer '" + layers.at(layer).name +
                                      "' (only Normal is supported): " + file.string());
           const cel_info *cel{resolve(layer, frame)};
           if (!cel || cel->width == 0 || cel->height == 0) continue;
           const std::vector<unsigned char> pixels{decode(*cel)};
-          const double layer_alpha{layers[layer].opacity / 255.0};
+          const double layer_alpha{layers.at(layer).opacity / 255.0};
           for (unsigned int row{}; row < cel->height; ++row)
           {
-            const int y{cel->y + static_cast<int>(row)};
-            if (y < 0 || y >= static_cast<int>(frame_height)) continue;
+            const int top{cel->y + static_cast<int>(row)};
+            if (top < 0 || std::cmp_greater_equal(top, static_cast<int>(frame_height))) continue;
             for (unsigned int column{}; column < cel->width; ++column)
             {
-              const int x{cel->x + static_cast<int>(column)};
-              if (x < 0 || x >= static_cast<int>(frame_width)) continue;
-              const std::size_t source{(static_cast<std::size_t>(row) * cel->width + column) * 4};
-              const double source_alpha{pixels[source + 3] / 255.0 * layer_alpha};
+              const int left{cel->x + static_cast<int>(column)};
+              if (left < 0 || std::cmp_greater_equal(left, static_cast<int>(frame_width))) continue;
+              const std::size_t source{((static_cast<std::size_t>(row) * cel->width) + column) * 4};
+              const double source_alpha{pixels.at(source + 3) / 255.0 * layer_alpha};
               if (source_alpha <= 0.0) continue;
               const std::size_t destination{
-                (static_cast<std::size_t>(y) * width + (static_cast<std::size_t>(frame) * frame_width + x)) * 4};
-              const double destination_alpha{sheet[destination + 3] / 255.0};
-              const double alpha{source_alpha + destination_alpha * (1.0 - source_alpha)};
+                ((static_cast<std::size_t>(top) * width) + ((static_cast<std::size_t>(frame) * frame_width) + left)) *
+                4};
+              const double destination_alpha{sheet.at(destination + 3) / 255.0};
+              const double alpha{source_alpha + (destination_alpha * (1.0 - source_alpha))};
               if (alpha <= 0.0) continue;
               for (std::size_t channel{}; channel < 3; ++channel)
               {
-                const double source_channel{pixels[source + channel] / 255.0};
-                const double destination_channel{sheet[destination + channel] / 255.0};
+                const double source_channel{pixels.at(source + channel) / 255.0};
+                const double destination_channel{sheet.at(destination + channel) / 255.0};
                 const double blended{
-                  (source_channel * source_alpha + destination_channel * destination_alpha * (1.0 - source_alpha)) /
+                  ((source_channel * source_alpha) + (destination_channel * destination_alpha * (1.0 - source_alpha))) /
                   alpha};
-                sheet[destination + channel] = static_cast<unsigned char>(blended * 255.0 + 0.5);
+                sheet.at(destination + channel) = static_cast<unsigned char>(std::lround(blended * 255.0));
               }
-              sheet[destination + 3] = static_cast<unsigned char>(alpha * 255.0 + 0.5);
+              sheet.at(destination + 3) = static_cast<unsigned char>(std::lround(alpha * 255.0));
             }
           }
         }
@@ -35082,7 +35136,7 @@ namespace csb
                                                              "' must be a single character: " + file.string());
                                  }};
                                if (name.empty()) throw invalid();
-                               const auto first{static_cast<unsigned char>(name[0])};
+                               const auto first{static_cast<unsigned char>(name.at(0))};
                                std::size_t length{1};
                                std::uint64_t character{first};
                                if (first >= 0xF0)
@@ -35096,9 +35150,9 @@ namespace csb
                                if (name.size() != length) throw invalid();
                                for (std::size_t offset{1}; offset < length; ++offset)
                                {
-                                 const auto continuation{static_cast<unsigned char>(name[offset])};
+                                 const auto continuation{static_cast<unsigned char>(name.at(offset))};
                                  if ((continuation & 0xC0u) != 0x80u) throw invalid();
-                                 character = (character << 6) | (continuation & 0x3Fu);
+                                 character = (character << 6u) | (continuation & 0x3Fu);
                                }
                                return character;
                              }};
@@ -35119,7 +35173,7 @@ namespace csb
                   [](const aseprite::glyph &left, const aseprite::glyph &right)
                   { return left.character < right.character; });
         for (std::size_t index{}; index + 1 < result.glyphs.size(); ++index)
-          if (result.glyphs[index].character == result.glyphs[index + 1].character)
+          if (result.glyphs.at(index).character == result.glyphs.at(index + 1).character)
             throw std::runtime_error("Aseprite file contains duplicate slices for the same character: " +
                                      file.string());
       }
@@ -35132,15 +35186,15 @@ namespace csb
         animation.range = {tag.from, tag.to};
         for (std::uint16_t frame{tag.from}; frame <= tag.to; ++frame)
         {
-          animation.times.push_back(durations[frame]);
+          animation.times.push_back(durations.at(frame));
           std::unordered_map<std::string, std::vector<std::array<double, 4>>> hitboxes{};
           for (std::size_t layer{}; layer < layers.size(); ++layer)
           {
-            if (!layers[layer].hitbox || !layers[layer].visible) continue;
+            if (!layers.at(layer).hitbox || !layers.at(layer).visible) continue;
             const cel_info *cel{resolve(layer, frame)};
             if (!cel || cel->width == 0 || cel->height == 0) continue;
             std::vector<std::array<double, 4>> rectangles{decompose(*cel, decode(*cel))};
-            if (!rectangles.empty()) hitboxes[layers[layer].name] = std::move(rectangles);
+            if (!rectangles.empty()) hitboxes.insert_or_assign(layers.at(layer).name, std::move(rectangles));
           }
           animation.hitboxes.push_back(std::move(hitboxes));
         }
@@ -35246,21 +35300,23 @@ namespace csb
   }
 }
 
-enum artifact
+enum artifact : std::uint8_t
 {
   EXECUTABLE,
   STATIC_LIBRARY,
   DYNAMIC_LIBRARY
 };
-enum standard
+enum standard : std::uint8_t
 {
   CXX11 = 11,
   CXX14 = 14,
   CXX17 = 17,
   CXX20 = 20,
-  CXX23 = 23
+  CXX23 = 23,
+  CXX26 = 26,
+  CXX29 = 29
 };
-enum warning
+enum warning : std::uint8_t
 {
   W0 = 0,
   W1 = 1,
@@ -35268,29 +35324,29 @@ enum warning
   W3 = 3,
   W4 = 4
 };
-enum linkage
+enum linkage : std::uint8_t
 {
   STATIC,
   DYNAMIC
 };
-enum task
+enum task : std::uint8_t
 {
   NONE,
   CLEAN,
   BUILD,
   RUN
 };
-enum configuration
+enum configuration : std::uint8_t
 {
   RELEASE,
   DEBUG
 };
-enum subsystem
+enum subsystem : std::uint8_t
 {
   CONSOLE,
   WINDOW
 };
-enum subproject
+enum subproject : std::uint8_t
 {
   STANDALONE,
   COMPILED_LIBRARY,
@@ -35301,12 +35357,9 @@ namespace csb::utility
 {
   inline task current_task{};
 
-  inline void handle_arguments(int argc, char *argv[])
+  inline void handle_arguments(const std::vector<std::string_view> &args)
   {
-    std::vector<std::string> args{};
-    for (int index{1}; index < argc; ++index) args.push_back(argv[index]);
-
-    if (args.size() < 1) throw std::runtime_error("Usage: csb [clean|build|run] [custom_arguments]");
+    if (args.empty()) throw std::runtime_error("Usage: csb [clean|build|run] [custom_arguments]");
 
     for (const auto &arg : args)
     {
@@ -35317,18 +35370,18 @@ namespace csb::utility
       else if (arg == "run")
         current_task = RUN;
       else
-        arguments.push_back(arg);
+        arguments.emplace_back(arg.data());
     }
   }
 
   inline void setup_environment_variables()
   {
     if (!std::filesystem::exists(".env")) return;
-    std::vector<std::string> env_content{read_file<std::vector<std::string>>(".env")};
+    const std::vector<std::string> env_content{read_file<std::vector<std::string>>(".env")};
     for (const auto &line : env_content)
     {
-      if (line.empty() || line[0] == '#') continue;
-      size_t equal_pos{line.find('=')};
+      if (line.empty() || line.at(0) == '#') continue;
+      const size_t equal_pos{line.find('=')};
       if (equal_pos == std::string::npos) continue;
       set_environment_variable(line.substr(0, equal_pos), line.substr(equal_pos + 1));
     }
@@ -35404,13 +35457,13 @@ namespace csb::utility
   {
     auto result{placeholder};
 
-    auto substitute{[&](const std::string &from, const std::string &to)
+    auto substitute{[&](const std::string &from, const std::string &next)
                     {
                       size_t pos = 0;
                       while ((pos = result.find(from, pos)) != std::string::npos)
                       {
-                        result.replace(pos, from.length(), to);
-                        pos += to.length();
+                        result.replace(pos, from.length(), next);
+                        pos += next.length();
                       }
                     }};
 
@@ -35423,7 +35476,7 @@ namespace csb::utility
         auto erase_and_dot{[&](size_t pos, size_t len)
                            {
                              content.erase(pos, len);
-                             if (pos < content.size() && content[pos] == '.') content.erase(pos, 1);
+                             if (pos < content.size() && content.at(pos) == '.') content.erase(pos, 1);
                            }};
 
         while (search_pos < content.size())
@@ -35431,57 +35484,56 @@ namespace csb::utility
           if (auto first_pos{content.find("FIRST", search_pos)}; first_pos != std::string::npos)
           {
             if (source.empty()) throw std::runtime_error("FIRST requires at least one path.");
-            if (std::find(chosen.begin(), chosen.end(), source.front()) == chosen.end())
-              chosen.push_back(source.front());
+            if (std::ranges::find(chosen, source.front()) == chosen.end()) chosen.push_back(source.front());
             erase_and_dot(first_pos, 5);
             search_pos = first_pos;
           }
           else if (auto last_pos{content.find("LAST", search_pos)}; last_pos != std::string::npos)
           {
             if (source.empty()) throw std::runtime_error("LAST requires at least one path.");
-            if (std::find(chosen.begin(), chosen.end(), source.back()) == chosen.end()) chosen.push_back(source.back());
+            if (std::ranges::find(chosen, source.back()) == chosen.end()) chosen.push_back(source.back());
             erase_and_dot(last_pos, 4);
             search_pos = last_pos;
           }
           else if (auto single_pos{content.find("SINGLE.", search_pos)}; single_pos != std::string::npos)
           {
-            size_t e{single_pos + 7};
-            while (e < content.size() && std::isdigit(content[e])) ++e;
-            auto index{std::stoi(content.substr(single_pos + 7, e - (single_pos + 7)))};
-            if (index < 1 || index > static_cast<int>(source.size()))
+            size_t element{single_pos + 7};
+            while (element < content.size() && std::isdigit(content.at(element))) ++element;
+            auto index{std::stoi(content.substr(single_pos + 7, element - (single_pos + 7)))};
+            if (index < 1 || std::cmp_greater(index, static_cast<int>(source.size())))
               throw std::runtime_error("SINGLE index out of bounds.");
-            if (std::find(chosen.begin(), chosen.end(), source[static_cast<size_t>(index - 1)]) == chosen.end())
-              chosen.push_back(source[static_cast<size_t>(index - 1)]);
-            erase_and_dot(single_pos, e - single_pos);
+            if (std::ranges::find(chosen, source.at(static_cast<size_t>(index - 1))) == chosen.end())
+              chosen.push_back(source.at(static_cast<size_t>(index - 1)));
+            erase_and_dot(single_pos, element - single_pos);
             search_pos = single_pos;
           }
           else if (auto range_pos{content.find("RANGE.", search_pos)}; range_pos != std::string::npos)
           {
-            size_t dot1{content.find(".", range_pos + 6)};
+            const size_t dot1{content.find('.', range_pos + 6)};
             if (dot1 == std::string::npos) throw std::runtime_error("RANGE requires two indices: RANGE.n.m");
-            size_t e{dot1 + 1};
-            while (e < content.size() && std::isdigit(content[e])) ++e;
-            int start{std::stoi(content.substr(range_pos + 6, dot1 - (range_pos + 6)))};
-            int end{std::stoi(content.substr(dot1 + 1, e - (dot1 + 1)))};
-            if (start < 1 || end < 1 || start > static_cast<int>(source.size()) ||
-                end > static_cast<int>(source.size()))
+            size_t element{dot1 + 1};
+            while (element < content.size() && std::isdigit(content.at(element))) ++element;
+            const int start{std::stoi(content.substr(range_pos + 6, dot1 - (range_pos + 6)))};
+            const int end{std::stoi(content.substr(dot1 + 1, element - (dot1 + 1)))};
+            if (start < 1 || end < 1 || std::cmp_greater(start, static_cast<int>(source.size())) ||
+                std::cmp_greater(end, static_cast<int>(source.size())))
               throw std::runtime_error("RANGE indices out of bounds.");
             if (start > end) throw std::runtime_error("RANGE start index must be <= end index.");
             for (int index{start}; index <= end; ++index)
-              if (std::find(chosen.begin(), chosen.end(), source[static_cast<size_t>(index - 1)]) == chosen.end())
-                chosen.push_back(source[static_cast<size_t>(index - 1)]);
-            erase_and_dot(range_pos, e - range_pos);
+              if (std::ranges::find(chosen, source.at(static_cast<size_t>(index - 1))) == chosen.end())
+                chosen.push_back(source.at(static_cast<size_t>(index - 1)));
+            erase_and_dot(range_pos, element - range_pos);
             search_pos = range_pos;
           }
           else if (auto except_pos{content.find("EXCEPT.", search_pos)}; except_pos != std::string::npos)
           {
-            size_t e{except_pos + 7};
-            while (e < content.size() && std::isdigit(content[e])) ++e;
-            int index{std::stoi(content.substr(except_pos + 7, e - (except_pos + 7)))};
-            if (index < 1 || index > static_cast<int>(chosen.size()))
+            size_t element{except_pos + 7};
+            while (element < content.size() && std::isdigit(content.at(element))) ++element;
+            const int index{std::stoi(content.substr(except_pos + 7, element - (except_pos + 7)))};
+            if (index < 1 || std::cmp_greater(index, static_cast<int>(chosen.size())))
               throw std::runtime_error("EXCEPT index out of bounds.");
             chosen.erase(chosen.begin() + (index - 1));
-            erase_and_dot(except_pos, e - except_pos);
+            erase_and_dot(except_pos, element - except_pos);
             search_pos = except_pos;
           }
           else
@@ -35500,7 +35552,7 @@ namespace csb::utility
           size_t method_end{};
           while (method_end != std::string::npos)
           {
-            method_end = content.find(".", method_start);
+            method_end = content.find('.', method_start);
             auto method{content.substr(method_start, method_end == std::string::npos ? std::string::npos
                                                                                      : method_end - method_start)};
             if (!method.empty())
@@ -35535,22 +35587,22 @@ namespace csb::utility
                      const std::vector<std::filesystem::path> &all_paths)
                  {
                    size_t pos{};
-                   std::string open_str(1, open), close_str(1, close);
+                   const std::string open_str(1, open), close_str(1, close);
                    while ((pos = result.find(open_str, pos)) != std::string::npos)
                    {
-                     size_t end_pos{result.find(close_str, pos)};
+                     const size_t end_pos{result.find(close_str, pos)};
                      if (end_pos == std::string::npos) break;
 
                      auto content{result.substr(pos + 1, end_pos - pos - 1)};
                      std::vector<std::filesystem::path> chosen{};
 
-                     if (size_t all_pos{content.find("ALL")}; all_pos != std::string::npos)
+                     if (const size_t all_pos{content.find("ALL")}; all_pos != std::string::npos)
                      {
                        if (all_paths.empty())
                          throw std::runtime_error("Path placeholder 'ALL' requires multi_task_run().");
                        chosen = all_paths;
                        content.erase(all_pos, 3);
-                       if (all_pos < content.size() && content[all_pos] == '.') content.erase(all_pos, 1);
+                       if (all_pos < content.size() && content.at(all_pos) == '.') content.erase(all_pos, 1);
                      }
                      else
                      {
@@ -35573,8 +35625,8 @@ namespace csb::utility
     substitute("[[", "\x03");
     substitute("]]", "\x04");
 
-    auto &[target_paths, check_paths]{paths};
-    auto &[full_target_paths, full_check_paths]{full_list};
+    const auto &[target_paths, check_paths]{paths};
+    const auto &[full_target_paths, full_check_paths]{full_list};
     process('(', ')', target_paths, full_target_paths);
     process('[', ']', check_paths, full_check_paths);
 
@@ -35601,11 +35653,11 @@ namespace csb::utility
     if (real_command.empty()) return;
 
     if (on_start) on_start(real_command);
-    auto *pipe{pipe_open((real_command + " 2>&1").c_str(), "r")};
+    auto *pipe{pipe_open(real_command + " 2>&1", "r")};
     if (!pipe) throw std::runtime_error("Failed to execute command: '" + real_command + "'.");
-    char buffer[512]{};
+    std::array<char, 512> buffer{};
     std::string output{};
-    while (fgets(buffer, sizeof(buffer), pipe)) output += buffer;
+    while (fgets(buffer.data(), buffer.size(), pipe)) output += buffer.data();
     const auto return_code{pipe_close(pipe)};
     if (return_code != 0)
     {
@@ -35648,15 +35700,21 @@ namespace csb::utility
       std::execution::par, items.begin(), items.end(),
       [&](const auto &item)
       {
-        std::filesystem::path item_path{};
-        std::vector<std::filesystem::path> item_dependencies{};
-        if constexpr (std::same_as<std::remove_cvref_t<decltype(item)>, std::filesystem::path>)
-          item_path = item;
-        else
-        {
-          item_path = item.first;
-          item_dependencies = item.second;
-        }
+        const auto item_path{[&]() -> std::filesystem::path
+                             {
+                               if constexpr (std::same_as<std::remove_cvref_t<decltype(item)>, std::filesystem::path>)
+                                 return item;
+                               else
+                                 return item.first;
+                             }()};
+        const auto item_dependencies{
+          [&]() -> std::vector<std::filesystem::path>
+          {
+            if constexpr (std::same_as<std::remove_cvref_t<decltype(item)>, std::filesystem::path>)
+              return {};
+            else
+              return item.second;
+          }()};
 
         std::string real_command{};
         if (std::holds_alternative<std::string>(command))
@@ -35685,7 +35743,7 @@ namespace csb::utility
         }
         catch (const std::exception &error)
         {
-          std::lock_guard<std::mutex> lock(exceptions_mutex);
+          const std::scoped_lock<std::mutex> lock(exceptions_mutex);
           exceptions.push_back(
             std::make_exception_ptr(std::runtime_error(std::format("{}: {}", item_path.string(), error.what()))));
           return;
@@ -35698,22 +35756,22 @@ namespace csb::utility
           }
           catch (const std::exception &error)
           {
-            std::lock_guard<std::mutex> lock(exceptions_mutex);
+            const std::scoped_lock<std::mutex> lock(exceptions_mutex);
             exceptions.push_back(
               std::make_exception_ptr(std::runtime_error(std::format("{}: {}", item_path.string(), error.what()))));
           }
         }
-        auto *pipe{pipe_open((item_command + " 2>&1").c_str(), "r")};
+        auto *pipe{pipe_open(item_command + " 2>&1", "r")};
         if (!pipe)
         {
-          std::lock_guard<std::mutex> lock(exceptions_mutex);
+          const std::scoped_lock<std::mutex> lock(exceptions_mutex);
           exceptions.push_back(std::make_exception_ptr(
             std::runtime_error(std::format("{}: Failed to execute command: '{}'.", item_path.string(), item_command))));
           return;
         }
-        char buffer[512]{};
+        std::array<char, 512> buffer{};
         std::string output{};
-        while (fgets(buffer, sizeof(buffer), pipe)) output += buffer;
+        while (fgets(buffer.data(), buffer.size(), pipe)) output += buffer.data();
         const auto return_code{pipe_close(pipe)};
         if (return_code != 0)
         {
@@ -35723,7 +35781,7 @@ namespace csb::utility
           }
           catch (const std::exception &error)
           {
-            std::lock_guard<std::mutex> lock(exceptions_mutex);
+            const std::scoped_lock<std::mutex> lock(exceptions_mutex);
             exceptions.push_back(
               std::make_exception_ptr(std::runtime_error(std::format("{}: {}", item_path.string(), error.what()))));
           }
@@ -35736,7 +35794,7 @@ namespace csb::utility
           }
           catch (const std::exception &error)
           {
-            std::lock_guard<std::mutex> lock(exceptions_mutex);
+            const std::scoped_lock<std::mutex> lock(exceptions_mutex);
             exceptions.push_back(
               std::make_exception_ptr(std::runtime_error(std::format("{}: {}", item_path.string(), error.what()))));
           }
@@ -35773,7 +35831,7 @@ namespace csb::utility
     if (real_command.empty()) return;
 
     if (on_start) on_start(real_command);
-    auto *pipe{pipe_open((real_command + " 2>&1").c_str(), "r")};
+    auto *pipe{pipe_open(real_command + " 2>&1", "r")};
     if (!pipe) throw std::runtime_error("Failed to execute command: '" + real_command + "'.");
     int character{};
     while ((character = fgetc(pipe)) != EOF)
@@ -35800,15 +35858,16 @@ namespace csb::utility
     for (const auto &target_file : target_files)
     {
       std::vector<std::filesystem::path> target_check_files{};
+      target_check_files.reserve(check_files.size());
       for (const auto &check_file : check_files)
-        target_check_files.push_back(
-          std::filesystem::path{placeholder_path_replace(check_file.string(), {{target_file}, {check_file}})});
+        target_check_files.emplace_back(placeholder_path_replace(check_file.string(), {{target_file}, {check_file}}));
 
       std::vector<std::filesystem::path> valid_files{};
       bool any_missing{};
       for (const auto &check_file : check_files)
       {
-        std::filesystem::path check_path{placeholder_path_replace(check_file.string(), {{target_file}, {check_file}})};
+        const std::filesystem::path check_path{
+          placeholder_path_replace(check_file.string(), {{target_file}, {check_file}})};
         if (!std::filesystem::exists(check_path))
         {
           any_missing = true;
@@ -35886,7 +35945,8 @@ namespace csb::utility
       [&](const std::string &, const std::string &output)
       {
         current_hash = output;
-        current_hash.erase(std::remove(current_hash.begin(), current_hash.end(), '\n'), current_hash.end());
+        const auto removed{std::ranges::remove(current_hash, '\n')};
+        current_hash.erase(removed.begin(), removed.end());
       },
       [](const std::string &, const int return_code, const std::string &output)
       {
@@ -35909,7 +35969,8 @@ namespace csb::utility
         [&](const std::string &, const std::string &output)
         {
           vcpkg_version = output;
-          vcpkg_version.erase(std::remove(vcpkg_version.begin(), vcpkg_version.end(), '\n'), vcpkg_version.end());
+          const auto removed{std::ranges::remove(vcpkg_version, '\n')};
+          vcpkg_version.erase(removed.begin(), removed.end());
         },
         [](const std::string &, const int return_code, const std::string &output)
         {
@@ -35923,7 +35984,8 @@ namespace csb::utility
       [&](const std::string &, const std::string &output)
       {
         target_hash = output;
-        target_hash.erase(std::remove(target_hash.begin(), target_hash.end(), '\n'), target_hash.end());
+        const auto removed{std::ranges::remove(target_hash, '\n')};
+        target_hash.erase(removed.begin(), removed.end());
       },
       [](const std::string &, const int return_code, const std::string &output)
       {
@@ -35982,7 +36044,8 @@ namespace csb::utility
       [&](const std::string &, const std::string &output)
       {
         current_hash = output;
-        current_hash.erase(std::remove(current_hash.begin(), current_hash.end(), '\n'), current_hash.end());
+        const auto removed{std::ranges::remove(current_hash, '\n')};
+        current_hash.erase(removed.begin(), removed.end());
       },
       [&](const std::string &, const int return_code, const std::string &output)
       {
@@ -36007,7 +36070,8 @@ namespace csb::utility
         [&](const std::string &, const std::string &output)
         {
           version = output;
-          version.erase(std::remove(version.begin(), version.end(), '\n'), version.end());
+          const auto removed{std::ranges::remove(version, '\n')};
+          version.erase(removed.begin(), removed.end());
         },
         [&](const std::string &, const int return_code, const std::string &output)
         {
@@ -36022,7 +36086,8 @@ namespace csb::utility
       [&](const std::string &, const std::string &output)
       {
         target_hash = output;
-        target_hash.erase(std::remove(target_hash.begin(), target_hash.end(), '\n'), target_hash.end());
+        const auto removed{std::ranges::remove(target_hash, '\n')};
+        target_hash.erase(removed.begin(), removed.end());
       },
       [&](const std::string &, const int return_code, const std::string &output)
       {
@@ -36057,8 +36122,8 @@ namespace csb::utility
   {
     auto to_upper{[](std::string string)
                   {
-                    std::transform(string.begin(), string.end(), string.begin(),
-                                   [](unsigned char character) { return std::toupper(character); });
+                    std::ranges::transform(string, string.begin(),
+                                           [](unsigned char character) { return std::toupper(character); });
                     return string;
                   }};
 
@@ -36079,7 +36144,7 @@ namespace csb::utility
         {
           for (const auto &release : nlohmann::json::parse(output))
           {
-            std::string tag{release["tag_name"]};
+            const std::string tag{release.at("tag_name")};
             if (tag.starts_with("llvmorg-")) versions.push_back(tag.substr(8));
           }
         },
@@ -36090,7 +36155,7 @@ namespace csb::utility
         });
       for (const auto &version : versions)
       {
-        std::filesystem::path archive{std::format(
+        const std::filesystem::path archive{std::format(
           "{}-{}-{}.tar.xz", host_platform == WINDOWS ? "clang+llvm" : "LLVM", version,
           host_platform == WINDOWS ? clang_architecture + "-pc-windows-msvc" : "Linux-" + clang_architecture)};
         auto url{std::format("https://github.com/llvm/llvm-project/releases/download/llvmorg-{}/{}", version,
@@ -36117,10 +36182,10 @@ namespace csb::utility
         nullptr,
         [&](const std::string &, const std::string &output)
         {
-          size_t pos{output.find("version ")};
+          const size_t pos{output.find("version ")};
           if (pos != std::string::npos)
           {
-            size_t end_pos{output.find_first_of(" \n", pos + 8)};
+            const size_t end_pos{output.find_first_of(" \n", pos + 8)};
             current_version = output.substr(pos + 8, end_pos - (pos + 8));
           }
         },
@@ -36140,7 +36205,7 @@ namespace csb::utility
 
     if (host_architecture != "x64" && host_architecture != "arm64")
       throw std::runtime_error("Clang bootstrap only supports 64 bit architectures.");
-    std::filesystem::path archive{
+    const std::filesystem::path archive{
       std::format("{}-{}-{}.tar.xz", host_platform == WINDOWS ? "clang+llvm" : "LLVM", clang_version,
                   host_platform == WINDOWS ? clang_architecture + "-pc-windows-msvc" : "Linux-" + clang_architecture)};
     auto url{std::format("https://github.com/llvm/llvm-project/releases/download/llvmorg-{}/{}", clang_version,
@@ -36271,7 +36336,7 @@ namespace csb
                       print<COUT>("{}\n{}", real_command, (trimmed_output.empty() ? "" : trimmed_output + "\n"));
                       for (const auto &check_file : check_files) touch(check_file);
                     }};
-    auto on_failure{[](const std::string &real_command, const int return_code, std::string output)
+    auto on_failure{[](const std::string &real_command, const int return_code, const std::string &output)
                     {
                       auto trimmed_output{trim(output)};
                       print<COUT>("{} -> {}\n{}", real_command, std::to_string(return_code),
@@ -36328,7 +36393,7 @@ namespace csb
       {
         auto dependency{
           std::filesystem::path{utility::placeholder_path_replace(check_file.string(), {{target_file}, {}})}};
-        if (std::find(dependency_files.begin(), dependency_files.end(), dependency) == dependency_files.end())
+        if (std::ranges::find(dependency_files, dependency) == dependency_files.end())
           dependency_files.push_back(dependency);
       }
     }
@@ -36600,7 +36665,7 @@ namespace csb
       {
         auto dependency{
           std::filesystem::path{utility::placeholder_path_replace(check_file.string(), {{target_file}, {}})}};
-        if (std::find(dependency_files.begin(), dependency_files.end(), dependency) == dependency_files.end())
+        if (std::ranges::find(dependency_files, dependency) == dependency_files.end())
           dependency_files.push_back(dependency);
       }
     auto on_start{[&dependency_files](const std::string &real_command)
@@ -36641,7 +36706,7 @@ namespace csb
    */
   inline void file_install(const std::tuple<std::string, std::filesystem::path, std::vector<std::string>> &file)
   {
-    auto &[url, target_path, extra_arguments]{file};
+    const auto &[url, target_path, extra_arguments]{file};
     if (url.empty()) throw std::runtime_error("File URL not set.");
     if (target_path.empty()) throw std::runtime_error("File target path not set.");
     if (std::filesystem::exists(target_path)) return;
@@ -36687,7 +36752,7 @@ namespace csb
   inline void archive_install(const std::tuple<std::string, std::filesystem::path, std::vector<std::filesystem::path>,
                                                std::vector<std::string>> &archive)
   {
-    auto &[url, extract_path, target_paths, extra_arguments]{archive};
+    const auto &[url, extract_path, target_paths, extra_arguments]{archive};
     if (url.empty()) throw std::runtime_error("Archive URL not set.");
     if (extract_path.empty()) throw std::runtime_error("Archive extract path not set.");
     if (std::filesystem::exists(extract_path)) return;
@@ -36700,7 +36765,7 @@ namespace csb
       { print<COUT>("Downloading archive at '{}'...\n", url); }, nullptr, [](const std::string &, const int return_code)
       { throw std::runtime_error("Failed to download archive. Exited with: " + std::to_string(return_code)); });
 
-    std::filesystem::path temp_extract_path{(extract_path.string() + "_temp")};
+    const std::filesystem::path temp_extract_path{(extract_path.string() + "_temp")};
     mkdir(temp_extract_path);
     utility::live_execute(
       std::format("tar -xf {} -C {}", archive_path.string(), temp_extract_path.string()),
@@ -36771,7 +36836,7 @@ namespace csb
     else if (host_platform == LINUX)
       vcpkg_triplet = std::format("{}-linux", host_architecture);
     auto vcpkg_installed_directory{std::filesystem::path{"build"} / "vcpkg_installed"};
-    std::pair<std::filesystem::path, std::filesystem::path> outputs{
+    const std::pair<std::filesystem::path, std::filesystem::path> outputs{
       vcpkg_installed_directory / vcpkg_triplet / "include",
       vcpkg_installed_directory / vcpkg_triplet /
         (target_configuration == RELEASE ? "lib" : std::filesystem::path{"debug"} / "lib")};
@@ -37009,34 +37074,34 @@ namespace csb
           data_values = handler(name, data);
         else
         {
-          data_values.push_back("");
+          data_values.emplace_back("");
           const std::vector<std::byte> &file_data_vector{std::get<0>(data)};
           for (size_t index{}; index < file_data_vector.size(); ++index)
           {
-            data_values[0] += byte_to_hex(file_data_vector[index]);
+            data_values.front() += byte_to_hex(file_data_vector.at(index));
             if (index < file_data_vector.size() - 1)
             {
-              data_values[0] += ",";
+              data_values.front() += ",";
               if ((index + 1) % 16 == 0)
-                data_values[0] += "\n    ";
+                data_values.front() += "\n    ";
               else
-                data_values[0] += " ";
+                data_values.front() += " ";
             }
           }
         }
 
         pos = 0;
-        while ((pos = placeholder.find("(", pos)) != std::string::npos)
+        while ((pos = placeholder.find('(', pos)) != std::string::npos)
         {
-          size_t end_pos{placeholder.find(")", pos)};
+          const size_t end_pos{placeholder.find(')', pos)};
           if (end_pos == std::string::npos) break;
 
           auto index{placeholder.substr(pos + 1, end_pos - pos - 1)};
-          if (index.empty() || !std::all_of(index.begin(), index.end(), ::isdigit))
+          if (index.empty() || !std::ranges::all_of(index, ::isdigit))
             throw std::runtime_error("Invalid data placeholder index: " + (index.empty() ? "null" : index) + ".");
           if (std::stoull(index) >= data_values.size())
             throw std::runtime_error("Data placeholder index out of range: " + index + ".");
-          auto replacement{data_values[std::stoull(index)]};
+          const auto &replacement{data_values.at(std::stoull(index))};
           placeholder.replace(pos, end_pos - pos + 1, replacement);
           pos += replacement.length();
         }
@@ -37065,8 +37130,8 @@ namespace csb
           const std::vector<std::filesystem::path> &task_outputs)
       {
         if (task_outputs.size() < 2) throw std::runtime_error("You must define a header and source output file.");
-        std::pair<std::filesystem::path, std::filesystem::path> fixed_outputs = {task_outputs.at(0),
-                                                                                 task_outputs.at(1)};
+        const std::pair<std::filesystem::path, std::filesystem::path> fixed_outputs = {task_outputs.at(0),
+                                                                                       task_outputs.at(1)};
         print<COUT>("Generating embedded resources into '{}' and '{}'... ", fixed_outputs.first.string(),
                     fixed_outputs.second.string());
 
@@ -37097,8 +37162,8 @@ namespace csb
           else
           {
             name = resource.filename().string();
-            std::replace(name.begin(), name.end(), '.', '_');
-            std::replace(name.begin(), name.end(), '-', '_');
+            std::ranges::replace(name, '.', '_');
+            std::ranges::replace(name, '-', '_');
           }
           if (header_function)
             header_content +=
@@ -37227,7 +37292,7 @@ namespace csb
 
     const auto manifest{path("build") / "resource" / "pack.manifest"};
     std::vector<std::filesystem::path> manifest_files{resources};
-    std::sort(manifest_files.begin(), manifest_files.end());
+    std::ranges::sort(manifest_files);
     std::string manifest_list{};
     for (const auto &file : manifest_files)
       manifest_list += spaces.at(file) + " " + packs_of.at(file) + " " + file.string() + "\n";
@@ -37314,7 +37379,7 @@ namespace csb
                                      for (const auto &animation : texture.animations)
                                        for (const auto &frame : animation.hitboxes)
                                          for (const auto &[identifier, bounds] : frame)
-                                           if (std::find(names.begin(), names.end(), identifier) == names.end())
+                                           if (std::ranges::find(names, identifier) == names.end())
                                              names.push_back(identifier);
                                      return names;
                                    }};
@@ -37345,15 +37410,15 @@ namespace csb
          const bool debug{target_configuration == DEBUG};
          const auto put_u64{[](std::vector<std::byte> &out, std::uint64_t value)
                             {
-                              std::byte raw[sizeof(value)];
-                              std::memcpy(raw, &value, sizeof(value));
-                              out.insert(out.end(), raw, raw + sizeof(value));
+                              std::vector<std::byte> raw{sizeof(value)};
+                              std::memcpy(raw.data(), &value, sizeof(value));
+                              out.insert(out.end(), raw.data(), raw.data() + sizeof(value));
                             }};
          const auto put_f64{[](std::vector<std::byte> &out, double value)
                             {
-                              std::byte raw[sizeof(value)];
-                              std::memcpy(raw, &value, sizeof(value));
-                              out.insert(out.end(), raw, raw + sizeof(value));
+                              std::vector<std::byte> raw{sizeof(value)};
+                              std::memcpy(raw.data(), &value, sizeof(value));
+                              out.insert(out.end(), raw.data(), raw.data() + sizeof(value));
                             }};
          const auto hash_identifier{[](const std::string &text)
                                     {
@@ -37368,16 +37433,16 @@ namespace csb
                                    for (const auto &animation : texture.animations)
                                      for (const auto &frame : animation.hitboxes)
                                        for (const auto &[identifier, rectangles] : frame)
-                                         if (std::find(names.begin(), names.end(), identifier) == names.end())
+                                         if (std::ranges::find(names, identifier) == names.end())
                                            names.push_back(identifier);
                                    return names;
                                  }};
 
          struct placement
          {
-           std::string key;
-           std::uint64_t offset;
-           std::uint64_t size;
+           std::string key{};
+           std::uint64_t offset{};
+           std::uint64_t size{};
          };
          std::unordered_map<std::filesystem::path, placement> placements{};
          std::unordered_map<std::filesystem::path,
@@ -37387,7 +37452,7 @@ namespace csb
          std::vector<std::string> packs{};
          for (const auto &[file, name, value] : files)
            if (!contains(packs, packs_of.at(file))) packs.push_back(packs_of.at(file));
-         std::sort(packs.begin(), packs.end());
+         std::ranges::sort(packs);
 
          std::string loaders{};
          for (const std::string &current_pack : packs)
@@ -37414,22 +37479,23 @@ namespace csb
                std::size_t index{};
                for (unsigned int frame{start}; frame <= end; ++frame)
                {
-                 const unsigned int x{frame % per_row};
-                 const unsigned int y{(per_column - 1) - (frame / per_row)};
-                 const double top{static_cast<double>((y + 1) * texture.frame_height) /
+                 const unsigned int first{frame % per_row};
+                 const unsigned int second{(per_column - 1) - (frame / per_row)};
+                 const double top{static_cast<double>((second + 1) * texture.frame_height) /
                                   static_cast<double>(texture.height)};
-                 const double left{static_cast<double>(x * texture.frame_width) / static_cast<double>(texture.width)};
-                 const double bottom{static_cast<double>(y * texture.frame_height) /
+                 const double left{static_cast<double>(first * texture.frame_width) /
+                                   static_cast<double>(texture.width)};
+                 const double bottom{static_cast<double>(second * texture.frame_height) /
                                      static_cast<double>(texture.height)};
-                 const double right{static_cast<double>((x + 1) * texture.frame_width) /
+                 const double right{static_cast<double>((first + 1) * texture.frame_width) /
                                     static_cast<double>(texture.width)};
 
                  const std::uint64_t hitbox_index{hitboxes_total};
                  std::uint64_t hitbox_count{};
-                 if (index < animation.hitboxes.size() && !animation.hitboxes[index].empty())
-                   for (const auto &[identifier, rectangles] : animation.hitboxes[index])
+                 if (index < animation.hitboxes.size() && !animation.hitboxes.at(index).empty())
+                   for (const auto &[identifier, rectangles] : animation.hitboxes.at(index))
                    {
-                     const std::string full{name + "." + identifier};
+                     const auto full{std::format("{}.{}", name, identifier)};
                      std::uint64_t label_offset{}, label_size{}, label_hash{};
                      if (debug)
                      {
@@ -37456,10 +37522,10 @@ namespace csb
                        }
                        else
                          put_u64(hitboxes_blob, label_hash);
-                       put_f64(hitboxes_blob, bounds[0]);
-                       put_f64(hitboxes_blob, bounds[1]);
-                       put_f64(hitboxes_blob, bounds[2]);
-                       put_f64(hitboxes_blob, bounds[3]);
+                       put_f64(hitboxes_blob, bounds.at(0));
+                       put_f64(hitboxes_blob, bounds.at(1));
+                       put_f64(hitboxes_blob, bounds.at(2));
+                       put_f64(hitboxes_blob, bounds.at(3));
                        ++hitboxes_total;
                        ++hitbox_count;
                      }
@@ -37475,20 +37541,20 @@ namespace csb
                  ++frames_total;
                  ++index;
                }
-               clips[file].push_back({frame_index, frames_total - frame_index, start, end});
+               clips.try_emplace(file).first->second.emplace_back(frame_index, frames_total - frame_index, start, end);
              }
              if (texture.space == "font")
              {
-               glyph_spans[file] = {glyphs_total, texture.glyphs.size()};
+               glyph_spans.insert_or_assign(file, std::pair{glyphs_total, texture.glyphs.size()});
                const auto canvas_width{static_cast<double>(texture.frame_width)};
                const auto canvas_height{static_cast<double>(texture.frame_height)};
                for (const auto &entry : texture.glyphs)
                {
                  put_u64(glyphs_blob, entry.character);
                  put_f64(glyphs_blob, static_cast<double>(entry.x) / canvas_width);
-                 put_f64(glyphs_blob, 1.0 - static_cast<double>(entry.y) / canvas_height);
+                 put_f64(glyphs_blob, 1.0 - (static_cast<double>(entry.y) / canvas_height));
                  put_f64(glyphs_blob, static_cast<double>(entry.x + entry.width) / canvas_width);
-                 put_f64(glyphs_blob, 1.0 - static_cast<double>(entry.y + entry.height) / canvas_height);
+                 put_f64(glyphs_blob, 1.0 - (static_cast<double>(entry.y + entry.height) / canvas_height));
                  put_f64(glyphs_blob, static_cast<double>(entry.width));
                  put_f64(glyphs_blob, static_cast<double>(entry.height));
                  ++glyphs_total;
@@ -37502,7 +37568,8 @@ namespace csb
              if (packs_of.at(file) != current_pack) continue;
              const std::size_t entry{container.table.size()};
              container.append(std::get<0>(value));
-             placements[file] = {current_pack + ".csp", container.table[entry].first, container.table[entry].second};
+             placements.insert_or_assign(file, placement{current_pack + ".csp", container.table.at(entry).first,
+                                                         container.table.at(entry).second});
            }
            const std::size_t frames_entry{container.table.size()};
            container.append(frames_blob);
@@ -37515,39 +37582,26 @@ namespace csb
            write_file(pack_directory / (current_pack + ".csp"), container);
 
            std::string identifier{current_pack};
-           std::replace(identifier.begin(), identifier.end(), '.', '_');
-           std::replace(identifier.begin(), identifier.end(), '-', '_');
+           std::ranges::replace(identifier, '.', '_');
+           std::ranges::replace(identifier, '-', '_');
            if (debug)
              loaders +=
                std::format("  const loader loaded_{}{{\"{}.csp\", {}ull, {}, {}, {}, {}, {}, {}, {}}};\n", identifier,
-                           current_pack, container.signature(), container.table[frames_entry].first,
-                           container.table[frames_entry].second, container.table[hitboxes_entry].first,
-                           container.table[hitboxes_entry].second, container.table[glyphs_entry].first,
-                           container.table[glyphs_entry].second, container.table[strings_entry].first);
+                           current_pack, container.signature(), container.table.at(frames_entry).first,
+                           container.table.at(frames_entry).second, container.table.at(hitboxes_entry).first,
+                           container.table.at(hitboxes_entry).second, container.table.at(glyphs_entry).first,
+                           container.table.at(glyphs_entry).second, container.table.at(strings_entry).first);
            else
              loaders += std::format("  const loader loaded_{}{{\"{}.csp\", {}ull, {}, {}, {}, {}, {}, {}}};\n",
                                     identifier, current_pack, container.signature(),
-                                    container.table[frames_entry].first, container.table[frames_entry].second,
-                                    container.table[hitboxes_entry].first, container.table[hitboxes_entry].second,
-                                    container.table[glyphs_entry].first, container.table[glyphs_entry].second);
+                                    container.table.at(frames_entry).first, container.table.at(frames_entry).second,
+                                    container.table.at(hitboxes_entry).first, container.table.at(hitboxes_entry).second,
+                                    container.table.at(glyphs_entry).first, container.table.at(glyphs_entry).second);
          }
 
          std::string result{"namespace cse::resource\n{\n" + loaders + "}\n\n"};
 
          result += std::format("namespace {}\n{{\n", space);
-         const auto define{[&](const std::string &space, const std::string &type)
-                           {
-                             std::string block{};
-                             for (const auto &[file, name, value] : files)
-                               if (std::get<1>(value).space == space)
-                               {
-                                 const auto &place{placements.at(file)};
-                                 block +=
-                                   std::format("    const cse::{} {}{{cse::resource::region(\"{}\", {}, {})}};\n", type,
-                                               name, place.key, place.offset, place.size);
-                               }
-                             if (!block.empty()) result += std::format("  namespace {}\n  {{\n{}  }}\n", space, block);
-                           }};
          {
            std::string block{};
            for (const auto &[file, name, value] : files)
@@ -37586,10 +37640,10 @@ namespace csb
              if (texture.space != "image" && texture.space != "font") continue;
              const auto &place{placements.at(file)};
              block += std::format("    const detail::{}_animation {}{{", name, name);
-             const auto &list{clips[file]};
+             const auto &list{clips.at(file)};
              for (std::size_t index{}; index < list.size(); ++index)
              {
-               const auto &[frame_index, frame_count, start, end]{list[index]};
+               const auto &[frame_index, frame_count, start, end]{list.at(index)};
                block += std::format("{{cse::resource::frames(\"{}\", {}, {}), {}, {}}}", place.key, frame_index,
                                     frame_count, start, end);
                if (index + 1 < list.size()) block += ", ";
@@ -37609,15 +37663,25 @@ namespace csb
              block += std::format("    const detail::{}_hitbox {}\n    {{\n", name, name);
              for (std::size_t index{}; index < names.size(); ++index)
              {
-               block += std::format("      \"{}\"", name + "." + names[index]);
+               block += std::format("      \"{}\"", name + "." + names.at(index));
                block += index + 1 < names.size() ? ",\n" : "\n";
              }
              block += "    };\n";
            }
            if (!block.empty()) result += "  namespace hitbox\n  {\n" + block + "  }\n";
          }
-         define("sound", "sound");
-         define("music", "music");
+         for (const std::string_view resource_space : {"sound", "music"})
+         {
+           std::string block{};
+           for (const auto &[file, name, value] : files)
+             if (std::get<1>(value).space == resource_space)
+             {
+               const auto &place{placements.at(file)};
+               block += std::format("    const cse::{} {}{{cse::resource::region(\"{}\", {}, {})}};\n", resource_space,
+                                    name, place.key, place.offset, place.size);
+             }
+           if (!block.empty()) result += std::format("  namespace {}\n  {{\n{}  }}\n", resource_space, block);
+         }
          result += "}\n";
          return result;
        }},
@@ -37647,7 +37711,7 @@ namespace csb
     auto escape_backslashes{[](const std::string &string) -> std::string
                             {
                               std::string result{};
-                              for (char character : string)
+                              for (const char character : string)
                               {
                                 if (character == '\\')
                                   result += "\\\\";
@@ -37691,13 +37755,13 @@ namespace csb
       for (const auto &definition : definitions) content += std::format("-D{} ", definition);
       std::vector<std::filesystem::path> include_directories{};
       for (const auto &include_file : include_files)
-        if (include_file.has_parent_path() && std::find(include_directories.begin(), include_directories.end(),
-                                                        include_file.parent_path()) == include_directories.end())
+        if (include_file.has_parent_path() &&
+            std::ranges::find(include_directories, include_file.parent_path()) == include_directories.end())
           include_directories.push_back(include_file.parent_path());
       for (const auto &directory : include_directories)
-        content += std::format("-I\\\"{}\\\" ", escape_backslashes(directory.string()));
+        content += std::format(R"(-I\"{}\" )", escape_backslashes(directory.string()));
       for (const auto &directory : external_include_directories)
-        content += std::format("-isystem\\\"{}\\\" ", escape_backslashes(directory.string()));
+        content += std::format(R"(-isystem\"{}\" )", escape_backslashes(directory.string()));
       content += std::format("-c \\\"{}\\\" -o \\\"{}\\\"\"\n", escape_backslashes((*iterator).string()),
                              escape_backslashes((build_directory / (iterator->stem().string() + ".o")).string()));
       content += "  }";
@@ -37720,19 +37784,73 @@ namespace csb
    *
    * This function's parameters behave as follows:
    * | `configuration`: A JSON object representing the clangd configuration. Will always contain a "CompileFlags" object
-   *                    with a "CompilationDatabase" field set to "build/".
+   *                    with a "CompilationDatabase" field set to "build/" if not manually set.
    */
   inline void generate_clangd(const nlohmann::json &configuration = {})
   {
     nlohmann::json config = configuration;
-    if (!config.contains("CompileFlags")) config["CompileFlags"] = nlohmann::json::object();
-    if (!config["CompileFlags"].contains("CompilationDatabase"))
-      config["CompileFlags"]["CompilationDatabase"] = "build/";
+    config.emplace("CompileFlags", nlohmann::json::object());
+    config.at("CompileFlags").emplace("CompilationDatabase", "build/");
     write_file(".clangd", json_to_yaml(config));
   }
 
   /**
-   * Generates a .clang-format file based on the given configuration.
+   * Generates a .clang-tidy file for the current project based on the given configuration. Warning promotion is left
+   * to the lint function so that clangd, which reads this file too, keeps showing findings as warnings.
+   *
+   * This function's parameters behave as follows:
+   * | `configuration`: A JSON object representing the clang-tidy configuration. Will always contain an
+   *                    "ExcludeHeaderFilterRegex" field set to ".*" if not manually set.
+   */
+  inline void generate_clang_tidy(const nlohmann::json &configuration = {})
+  {
+    nlohmann::json config = configuration;
+    config.emplace("ExcludeHeaderFilterRegex", ".*");
+    write_file(".clang-tidy", json_to_yaml(config));
+  }
+
+  /**
+   * Lints source and include files using clang-tidy with optional filtering and version anchoring.
+   *
+   * This function's parameters behave as follows:
+   * | `clang_version`: Specifies the clang version (tag) to use. If empty, the latest version is used.
+   * | `overrides`: A list of files to always lint.
+   * | `excludes`: A list of files to never lint.
+   */
+  inline void lint(const std::string &clang_version = {}, const std::vector<std::filesystem::path> &overrides = {},
+                   const std::vector<std::filesystem::path> &excludes = {})
+  {
+    for (auto &file : source_files) file.make_preferred();
+    for (auto &file : include_files) file.make_preferred();
+    if (source_files.empty() && include_files.empty()) throw std::runtime_error("No files to lint.");
+
+    auto lint_directory{std::filesystem::path{"build"} / "lint"};
+    if (!std::filesystem::exists(lint_directory)) std::filesystem::create_directories(lint_directory);
+    std::vector<std::filesystem::path> lint_files{};
+    lint_files.reserve(1 + source_files.size() + include_files.size() + overrides.size());
+    lint_files.push_back(std::filesystem::path{"csb"} / "csb.cpp");
+    lint_files.insert(lint_files.end(), source_files.begin(), source_files.end());
+    lint_files.insert(lint_files.end(), include_files.begin(), include_files.end());
+    lint_files.insert(lint_files.end(), overrides.begin(), overrides.end());
+    if (!excludes.empty())
+    {
+      const auto removed{std::ranges::remove_if(lint_files, [&](const std::filesystem::path &path)
+                                                { return std::ranges::find(excludes, path) != excludes.end(); })};
+      lint_files.erase(removed.begin(), removed.end());
+    }
+    std::ranges::sort(lint_files);
+    const auto dupes{std::ranges::unique(lint_files)};
+    lint_files.erase(dupes.begin(), dupes.end());
+    auto clang_path{utility::bootstrap_clang(clang_version)};
+    auto clang_tidy_path{clang_path / (host_platform == WINDOWS ? "clang-tidy.exe" : "clang-tidy")};
+
+    multi_task_run(std::format("{} -p build --quiet \"--warnings-as-errors=*\" \"()\"",
+                               (host_platform == WINDOWS ? "" : "./") + clang_tidy_path.string()),
+                   lint_files, {lint_directory / "(filename).linted", ".clang-tidy"});
+  }
+
+  /**
+   * Generates a .clang-format file for the current project based on the given configuration.
    *
    * This function's parameters behave as follows:
    * | `configuration`: A vector of pairs representing the configuration. If empty, throws an exception.
@@ -37774,12 +37892,14 @@ namespace csb
     format_files.insert(format_files.end(), include_files.begin(), include_files.end());
     format_files.insert(format_files.end(), overrides.begin(), overrides.end());
     if (!excludes.empty())
-      format_files.erase(
-        std::remove_if(format_files.begin(), format_files.end(), [&](const std::filesystem::path &path)
-                       { return std::find(excludes.begin(), excludes.end(), path) != excludes.end(); }),
-        format_files.end());
-    std::sort(format_files.begin(), format_files.end());
-    format_files.erase(std::unique(format_files.begin(), format_files.end()), format_files.end());
+    {
+      const auto removed{std::ranges::remove_if(format_files, [&](const std::filesystem::path &path)
+                                                { return std::ranges::find(excludes, path) != excludes.end(); })};
+      format_files.erase(removed.begin(), removed.end());
+    }
+    std::ranges::sort(format_files);
+    const auto dupes{std::ranges::unique(format_files)};
+    format_files.erase(dupes.begin(), dupes.end());
     auto clang_path{utility::bootstrap_clang(clang_version)};
     auto clang_format_path{clang_path / (host_platform == WINDOWS ? "clang-format.exe" : "clang-format")};
 
@@ -37794,7 +37914,7 @@ namespace csb
     for (const auto &entry : std::filesystem::directory_iterator("build"))
     {
       if (entry.path().filename() == std::format("csb{}", (host_platform == WINDOWS ? ".exe" : ""))) continue;
-      if (std::find(ignore_files.begin(), ignore_files.end(), entry.path()) != ignore_files.end()) continue;
+      if (std::ranges::find(ignore_files, entry.path()) != ignore_files.end()) continue;
       std::filesystem::remove_all(entry.path());
     }
     print<COUT>("done.\n{}\n", utility::small_section_divider());
@@ -37804,7 +37924,7 @@ namespace csb
   { clean_build(std::vector<std::filesystem::path>{ignore_file}); }
 
   // Cleans the specified files.
-  inline void clean(const std::vector<std::filesystem::path> files)
+  inline void clean(const std::vector<std::filesystem::path> &files)
   {
     print<COUT>("\n{}\nCleaning files...\n", utility::small_section_divider());
     for (const auto &file : files)
@@ -37847,12 +37967,12 @@ namespace csb
       for (const auto &definition : definitions) compile_definitions += std::format("/D{} ", definition);
       std::vector<std::filesystem::path> include_directories{};
       for (const auto &include_file : include_files)
-        if (include_file.has_parent_path() && std::find(include_directories.begin(), include_directories.end(),
-                                                        include_file.parent_path()) == include_directories.end())
+        if (include_file.has_parent_path() &&
+            std::ranges::find(include_directories, include_file.parent_path()) == include_directories.end())
           include_directories.push_back(include_file.parent_path());
       for (const auto &header : precompiled_headers)
-        if (header.has_parent_path() && std::find(include_directories.begin(), include_directories.end(),
-                                                  header.parent_path()) == include_directories.end())
+        if (header.has_parent_path() &&
+            std::ranges::find(include_directories, header.parent_path()) == include_directories.end())
           include_directories.push_back(header.parent_path());
       if (!precompiled_headers.empty())
         include_directories.insert(include_directories.begin(), utility::build_directory / "pch");
@@ -37866,26 +37986,28 @@ namespace csb
       auto dependency_handler{
         [](const std::filesystem::path &, const std::vector<std::filesystem::path> &checked_files) -> bool
         {
-          auto object_time{std::filesystem::last_write_time(checked_files[0])};
-          std::filesystem::path dependency_path{checked_files[1]};
+          auto object_time{std::filesystem::last_write_time(checked_files.at(0))};
+          const std::filesystem::path &dependency_path{checked_files.at(1)};
 
           std::ifstream dependency_file(dependency_path);
           if (!dependency_file.is_open()) return true;
-          std::string json_content((std::istreambuf_iterator<char>(dependency_file)), std::istreambuf_iterator<char>());
+          const std::string json_content((std::istreambuf_iterator<char>(dependency_file)),
+                                         std::istreambuf_iterator<char>());
           dependency_file.close();
 
-          size_t includes_start{json_content.find("\"Includes\": [")};
+          const size_t includes_start{json_content.find("\"Includes\": [")};
           if (includes_start == std::string::npos) return true;
-          size_t includes_end{json_content.find("]", includes_start)};
+          const size_t includes_end{json_content.find(']', includes_start)};
           if (includes_end == std::string::npos) return true;
-          std::string includes_section{json_content.substr(includes_start + 13, includes_end - includes_start - 13)};
+          const std::string includes_section{
+            json_content.substr(includes_start + 13, includes_end - includes_start - 13)};
           size_t pos{};
-          while ((pos = includes_section.find("\"", pos)) != std::string::npos)
+          while ((pos = includes_section.find('\"', pos)) != std::string::npos)
           {
-            size_t start{pos + 1};
-            size_t end{includes_section.find("\"", start)};
+            const size_t start{pos + 1};
+            const size_t end{includes_section.find('\"', start)};
             if (end == std::string::npos) break;
-            std::filesystem::path include_path{includes_section.substr(start, end - start)};
+            const std::filesystem::path include_path{includes_section.substr(start, end - start)};
             if (std::filesystem::exists(include_path))
             {
               auto include_time{std::filesystem::last_write_time(include_path)};
@@ -37894,11 +38016,11 @@ namespace csb
             pos = end + 1;
           }
 
-          size_t pch_start{json_content.find("\"PCH\": \"")};
+          const size_t pch_start{json_content.find(R"("PCH": ")")};
           if (pch_start == std::string::npos) return false;
-          size_t pch_end{json_content.find("\",", pch_start)};
+          const size_t pch_end{json_content.find("\",", pch_start)};
           if (pch_end == std::string::npos) return false;
-          std::filesystem::path pch_path{json_content.substr(pch_start + 8, pch_end - pch_start - 8)};
+          const std::filesystem::path pch_path{json_content.substr(pch_start + 8, pch_end - pch_start - 8)};
           if (std::filesystem::exists(pch_path))
           {
             auto pch_time{std::filesystem::last_write_time(pch_path)};
@@ -37929,14 +38051,14 @@ namespace csb
             compiler = "cl /std:c17 /TC";
           else
             compiler = "cl /std:c++" + std::to_string(cxx_standard);
-          return std::format(
-            "{} /nologo /W{} /external:W0 {}/bigobj /Zc:preprocessor /EHsc /MP /{} {}/ifcOutput{}\\ /Fo{}\\ /Fd\"{}\" "
-            "/sourceDependencies\"{}\" {}{}/c /Yc\"{}\" /Fp\"{}\" \"{}\"",
-            compiler, std::to_string(warning_level), compile_debug_flags, runtime_library, compile_definitions,
-            pch_directory.string(), pch_directory.string(), (pch_directory / "(stem)_pch.pdb").string(),
-            (pch_directory / "(stem)_pch.d").string(), compile_include_directories,
-            compile_external_include_directories, relative_path, (pch_directory / "(stem).pch").string(),
-            (pch_directory / "(stem)_pch.cpp").string());
+          return std::format("{} /nologo /W{} /WX /external:W0 {}/bigobj /Zc:preprocessor /EHsc /MP /{} "
+                             "{}/ifcOutput{}\\ /Fo{}\\ /Fd\"{}\" "
+                             "/sourceDependencies\"{}\" {}{}/c /Yc\"{}\" /Fp\"{}\" \"{}\"",
+                             compiler, std::to_string(warning_level), compile_debug_flags, runtime_library,
+                             compile_definitions, pch_directory.string(), pch_directory.string(),
+                             (pch_directory / "(stem)_pch.pdb").string(), (pch_directory / "(stem)_pch.d").string(),
+                             compile_include_directories, compile_external_include_directories, relative_path,
+                             (pch_directory / "(stem).pch").string(), (pch_directory / "(stem)_pch.cpp").string());
         },
         precompiled_headers, check_files, dependency_handler);
 
@@ -37954,11 +38076,11 @@ namespace csb
           {
             if (first_line.empty()) continue;
             if (first_line.find("#include") == std::string::npos) break;
-            std::regex include_regex(R"(#include\s*["<](.*)[">])");
+            const std::regex include_regex(R"(#include\s*["<](.*)[">])");
             std::smatch match{};
             if (std::regex_search(first_line, match, include_regex))
             {
-              std::filesystem::path include_path{match[1].str()};
+              const std::filesystem::path include_path{match.str(1)};
               for (const auto &header : precompiled_headers)
               {
                 if (include_path.filename() == header.filename())
@@ -37972,7 +38094,7 @@ namespace csb
           read_file.close();
           std::string pch_flags{};
           if (!precompiled_header.empty())
-            pch_flags = std::format("/Yu\"{}\" /Fp\"{}\" ", precompiled_header.filename().string(),
+            pch_flags = std::format(R"(/Yu"{}" /Fp"{}" )", precompiled_header.filename().string(),
                                     (pch_directory / (precompiled_header.stem().string() + ".pch")).string());
 
           std::string compiler{};
@@ -37980,13 +38102,14 @@ namespace csb
             compiler = "cl /std:c17 /TC";
           else
             compiler = "cl /std:c++" + std::to_string(cxx_standard);
-          return std::format(
-            "{} /nologo /W{} /external:W0 {}/bigobj /Zc:preprocessor /EHsc /MP /{} {}/ifcOutput{}\\ /Fo{}\\ /Fd\"{}\" "
-            "/sourceDependencies\"{}\" {}{}/c {}\"()\"",
-            compiler, std::to_string(warning_level), compile_debug_flags, runtime_library, compile_definitions,
-            utility::build_directory.string(), utility::build_directory.string(),
-            (utility::build_directory / "(stem).pdb").string(), (utility::build_directory / "(stem).d").string(),
-            compile_include_directories, compile_external_include_directories, pch_flags);
+          return std::format("{} /nologo /W{} /WX /external:W0 {}/bigobj /Zc:preprocessor /EHsc /MP /{} "
+                             "{}/ifcOutput{}\\ /Fo{}\\ /Fd\"{}\" "
+                             "/sourceDependencies\"{}\" {}{}/c {}\"()\"",
+                             compiler, std::to_string(warning_level), compile_debug_flags, runtime_library,
+                             compile_definitions, utility::build_directory.string(), utility::build_directory.string(),
+                             (utility::build_directory / "(stem).pdb").string(),
+                             (utility::build_directory / "(stem).d").string(), compile_include_directories,
+                             compile_external_include_directories, pch_flags);
         },
         source_files, check_files, dependency_handler);
     }
@@ -37999,12 +38122,12 @@ namespace csb
       for (const auto &definition : definitions) compile_definitions += std::format("-D{} ", definition);
       std::vector<std::filesystem::path> include_directories{};
       for (const auto &include_file : include_files)
-        if (include_file.has_parent_path() && std::find(include_directories.begin(), include_directories.end(),
-                                                        include_file.parent_path()) == include_directories.end())
+        if (include_file.has_parent_path() &&
+            std::ranges::find(include_directories, include_file.parent_path()) == include_directories.end())
           include_directories.push_back(include_file.parent_path());
       for (const auto &header : precompiled_headers)
-        if (header.has_parent_path() && std::find(include_directories.begin(), include_directories.end(),
-                                                  header.parent_path()) == include_directories.end())
+        if (header.has_parent_path() &&
+            std::ranges::find(include_directories, header.parent_path()) == include_directories.end())
           include_directories.push_back(header.parent_path());
       if (!precompiled_headers.empty())
         include_directories.insert(include_directories.begin(), utility::build_directory / "pch");
@@ -38014,7 +38137,7 @@ namespace csb
       std::string compile_external_include_directories{};
       for (const auto &directory : external_include_directories)
         compile_external_include_directories += std::format("-isystem\"{}\" ", directory.string());
-      std::string warning_flags{};
+      std::string warning_flags{"-Werror "};
       if (warning_level >= W1) warning_flags += "-Wall ";
       if (warning_level >= W2) warning_flags += "-Wextra ";
       if (warning_level >= W3) warning_flags += "-Wpedantic ";
@@ -38025,8 +38148,8 @@ namespace csb
       auto dependency_handler{
         [](const std::filesystem::path &file, const std::vector<std::filesystem::path> &checked_files) -> bool
         {
-          auto object_time{std::filesystem::last_write_time(checked_files[0])};
-          std::filesystem::path dependency_path{checked_files[1]};
+          auto object_time{std::filesystem::last_write_time(checked_files.at(0))};
+          const std::filesystem::path &dependency_path{checked_files.at(1)};
 
           std::ifstream dependency_file(dependency_path);
           if (!dependency_file.is_open()) return true;
@@ -38040,17 +38163,17 @@ namespace csb
           }
           dependency_file.close();
 
-          size_t colon_pos{full_content.find(':')};
+          const size_t colon_pos{full_content.find(':')};
           if (colon_pos == std::string::npos) return true;
           std::string dependencies{full_content.substr(colon_pos + 1)};
           size_t pos{};
           while (pos < dependencies.length())
           {
-            while (pos < dependencies.length() && std::isspace(dependencies[pos])) pos++;
+            while (pos < dependencies.length() && std::isspace(dependencies.at(pos))) pos++;
             if (pos >= dependencies.length()) break;
             size_t end{pos};
-            while (end < dependencies.length() && !std::isspace(dependencies[end])) end++;
-            std::filesystem::path include_path{dependencies.substr(pos, end - pos)};
+            while (end < dependencies.length() && !std::isspace(dependencies.at(end))) end++;
+            const std::filesystem::path include_path{dependencies.substr(pos, end - pos)};
             if (std::filesystem::exists(include_path))
             {
               auto include_time{std::filesystem::last_write_time(include_path)};
@@ -38068,11 +38191,11 @@ namespace csb
           {
             if (first_line.empty()) continue;
             if (first_line.find("#include") == std::string::npos) break;
-            std::regex include_regex(R"(#include\s*["<](.*)[">])");
+            const std::regex include_regex(R"(#include\s*["<](.*)[">])");
             std::smatch match{};
             if (std::regex_search(first_line, match, include_regex))
             {
-              std::filesystem::path include_path{match[1].str()};
+              const std::filesystem::path include_path{match.str(1)};
               for (const auto &header : precompiled_headers)
                 if (include_path.filename() == header.filename())
                 {
@@ -38160,9 +38283,9 @@ namespace csb
                ? ""
                : std::format("/PDB:{}.pdb ", (utility::build_directory / target_name).string()))
           : ""};
-      std::string extension{target_artifact == STATIC_LIBRARY    ? "lib"
-                            : target_artifact == DYNAMIC_LIBRARY ? "dll"
-                                                                 : "exe"};
+      const std::string extension{target_artifact == STATIC_LIBRARY    ? std::string_view{"lib"}
+                                  : target_artifact == DYNAMIC_LIBRARY ? "dll"
+                                                                       : "exe"};
       std::string link_library_directories{};
       for (const auto &directory : library_directories)
         link_library_directories += std::format("/LIBPATH:\"{}\" ", directory.string());
@@ -38194,10 +38317,12 @@ namespace csb
     }
     else if (host_platform == LINUX)
     {
-      std::string extension{target_artifact == STATIC_LIBRARY ? "a" : target_artifact == DYNAMIC_LIBRARY ? "so" : ""};
-      std::string output_name{(target_artifact == STATIC_LIBRARY || target_artifact == DYNAMIC_LIBRARY)
-                                ? "lib" + target_name + "." + extension
-                                : target_name};
+      const std::string extension{target_artifact == STATIC_LIBRARY    ? "a"
+                                  : target_artifact == DYNAMIC_LIBRARY ? "so"
+                                                                       : ""};
+      const std::string output_name{(target_artifact == STATIC_LIBRARY || target_artifact == DYNAMIC_LIBRARY)
+                                      ? "lib" + target_name + "." + extension
+                                      : target_name};
       std::string runtime_linkage{target_linkage == STATIC ? "-static-libstdc++ -static-libgcc " : ""};
       std::string link_library_directories{};
       for (const auto &directory : library_directories)
@@ -38216,7 +38341,7 @@ namespace csb
         target_files.push_back(utility::build_directory / (source_file.stem().string() + ".o"));
       for (const auto &precompiled_header : precompiled_headers)
         target_files.push_back(utility::build_directory / "pch" / (precompiled_header.filename().string() + ".gch"));
-      std::vector<std::filesystem::path> check_files{utility::build_directory / output_name};
+      const std::vector<std::filesystem::path> check_files{utility::build_directory / output_name};
 
       std::string command{};
       if (target_artifact == STATIC_LIBRARY)
@@ -38244,7 +38369,7 @@ namespace csb
                                             std::function<std::vector<std::string>()>> &target_arguments = {})
   {
     if (target_artifact != EXECUTABLE) throw std::runtime_error("Target artifact is not an executable.");
-    std::filesystem::path executable_path{std::format(
+    const std::filesystem::path executable_path{std::format(
       "{}{}{}", (host_platform == LINUX ? "./" : ""),
       (std::filesystem::path("build") / (target_configuration == RELEASE ? "release" : "debug") / target_name).string(),
       (host_platform == WINDOWS ? ".exe" : ""))};
@@ -38280,55 +38405,67 @@ namespace csb
 
   constexpr auto success{EXIT_SUCCESS};
   constexpr auto failure{EXIT_FAILURE};
+  inline int entry(const int argc, char **argv)
+  {
+    try
+    {
+      if (csb::host_platform == WINDOWS)
+      {
+        const std::string error_message{"Ensure you are running from an environment with access to MSVC tools."};
+        auto vs_path{csb::utility::strict_get_env("VSINSTALLDIR", error_message)};
+        if (vs_path.back() == '\\') vs_path.pop_back();
+        auto toolset_version{csb::utility::strict_get_env("VCToolsVersion", error_message)};
+        if (toolset_version.back() == '\\') toolset_version.pop_back();
+        auto sdk_version{csb::utility::strict_get_env("WindowsSDKVersion", error_message)};
+        if (sdk_version.back() == '\\') sdk_version.pop_back();
+        csb::print<COUT>("Architecture: {}\nVisual Studio: {}\nToolset: {}\nWindows SDK: {}\n", csb::host_architecture,
+                         vs_path, toolset_version, sdk_version);
+      }
+      else if (csb::host_platform == LINUX)
+        csb::print<COUT>("Architecture: {}\n", csb::host_architecture);
+      else
+        throw std::runtime_error("Unsupported platform.");
+
+      const std::span<char *> args(argv, static_cast<std::size_t>(argc));
+      csb::utility::handle_arguments(std::vector<std::string_view>(args.begin(), args.end()));
+      csb::utility::setup_environment_variables();
+      if (!csb::get_environment_variable("CSB_TARGET_CONFIGURATION").empty()) csb::is_subproject = true;
+      csb::configure();
+      if (csb::is_subproject)
+        csb::target_configuration =
+          csb::utility::strict_get_env("CSB_TARGET_CONFIGURATION",
+                                       "Subproject detected with no CSB_TARGET_CONFIGURATION") == "RELEASE"
+            ? RELEASE
+            : DEBUG;
+      else
+        csb::set_environment_variable("CSB_TARGET_CONFIGURATION",
+                                      csb::target_configuration == RELEASE ? "RELEASE" : "DEBUG");
+      if (csb::utility::current_task == CLEAN)
+        return csb::clean();
+      else if (csb::utility::current_task == BUILD)
+        return csb::build();
+      else if (csb::utility::current_task == RUN)
+        return csb::run();
+      else
+        throw std::runtime_error("No task specified.");
+    }
+    catch (const std::exception &exception)
+    {
+      csb::print<CERR>("{}\n", exception.what());
+      return csb::failure;
+    }
+  }
 }
 
 #define CSB_MAIN()                                                                                                     \
-  int main(int argc, char *argv[])                                                                                     \
+  int main(int argc, char **argv)                                                                                      \
   {                                                                                                                    \
     try                                                                                                                \
     {                                                                                                                  \
-      if (csb::host_platform == WINDOWS)                                                                               \
-      {                                                                                                                \
-        const auto error_message{"Ensure you are running from an environment with access to MSVC tools."};             \
-        auto vs_path{csb::utility::strict_get_env("VSINSTALLDIR", error_message)};                                     \
-        if (vs_path.back() == '\\') vs_path.pop_back();                                                                \
-        auto toolset_version{csb::utility::strict_get_env("VCToolsVersion", error_message)};                           \
-        if (toolset_version.back() == '\\') toolset_version.pop_back();                                                \
-        auto sdk_version{csb::utility::strict_get_env("WindowsSDKVersion", error_message)};                            \
-        if (sdk_version.back() == '\\') sdk_version.pop_back();                                                        \
-        csb::print<COUT>("Architecture: {}\nVisual Studio: {}\nToolset: {}\nWindows SDK: {}\n",                        \
-                         csb::host_architecture, vs_path, toolset_version, sdk_version);                               \
-      }                                                                                                                \
-      else if (csb::host_platform == LINUX)                                                                            \
-        csb::print<COUT>("Architecture: {}\n", csb::host_architecture);                                                \
-      else                                                                                                             \
-        throw std::runtime_error("Unsupported platform.");                                                             \
-                                                                                                                       \
-      csb::utility::handle_arguments(argc, argv);                                                                      \
-      csb::utility::setup_environment_variables();                                                                     \
-      if (!csb::get_environment_variable("CSB_TARGET_CONFIGURATION").empty()) csb::is_subproject = true;               \
-      csb::configure();                                                                                                \
-      if (csb::is_subproject)                                                                                          \
-        csb::target_configuration =                                                                                    \
-          csb::utility::strict_get_env("CSB_TARGET_CONFIGURATION",                                                     \
-                                       "Subproject detected with no CSB_TARGET_CONFIGURATION") == "RELEASE"            \
-            ? RELEASE                                                                                                  \
-            : DEBUG;                                                                                                   \
-      else                                                                                                             \
-        csb::set_environment_variable("CSB_TARGET_CONFIGURATION",                                                      \
-                                      csb::target_configuration == RELEASE ? "RELEASE" : "DEBUG");                     \
-      if (csb::utility::current_task == CLEAN)                                                                         \
-        return csb::clean();                                                                                           \
-      else if (csb::utility::current_task == BUILD)                                                                    \
-        return csb::build();                                                                                           \
-      else if (csb::utility::current_task == RUN)                                                                      \
-        return csb::run();                                                                                             \
-      else                                                                                                             \
-        throw std::runtime_error("No task specified.");                                                                \
+      return csb::entry(argc, argv);                                                                                   \
     }                                                                                                                  \
-    catch (const std::exception &exception)                                                                            \
+    catch (...)                                                                                                        \
     {                                                                                                                  \
-      csb::print<CERR>("{}\n", exception.what());                                                                      \
-      return csb::failure;                                                                                             \
+      std::exit(csb::failure);                                                                                         \
     }                                                                                                                  \
   }

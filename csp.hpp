@@ -31,7 +31,6 @@
   #include <memoryapi.h>
   #include <minwindef.h>
   #include <winnt.h>
-
   #ifdef near
     #undef near
   #endif
@@ -74,12 +73,13 @@ namespace csp
       for (std::uint32_t entry{}; entry < 256; ++entry)
       {
         std::uint32_t value{entry};
-        for (int bit{}; bit < 8; ++bit) value = (value & 1u) ? (crc32c_poly ^ (value >> 1)) : (value >> 1);
-        table[0][entry] = value;
+        for (int bit{}; bit < 8; ++bit) value = (value & 1u) ? (crc32c_poly ^ (value >> 1u)) : (value >> 1u);
+        table.at(0).at(entry) = value;
       }
       for (std::uint32_t entry{}; entry < 256; ++entry)
         for (std::size_t slice{1}; slice < 8; ++slice)
-          table[slice][entry] = (table[slice - 1][entry] >> 8) ^ table[0][table[slice - 1][entry] & 0xFFu];
+          table.at(slice).at(entry) =
+            (table.at(slice - 1).at(entry) >> 8u) ^ table.at(0).at(table.at(slice - 1).at(entry) & 0xFFu);
       return table;
     }
     inline constexpr std::array<std::array<std::uint32_t, 256>, 8> crc32c_table{make_crc32c_table()};
@@ -92,12 +92,12 @@ namespace csp
         std::uint64_t word{};
         std::memcpy(&word, bytes + index, sizeof(word));
         word ^= crc;
-        crc = crc32c_table[7][word & 0xFFu] ^ crc32c_table[6][(word >> 8) & 0xFFu] ^
-              crc32c_table[5][(word >> 16) & 0xFFu] ^ crc32c_table[4][(word >> 24) & 0xFFu] ^
-              crc32c_table[3][(word >> 32) & 0xFFu] ^ crc32c_table[2][(word >> 40) & 0xFFu] ^
-              crc32c_table[1][(word >> 48) & 0xFFu] ^ crc32c_table[0][(word >> 56) & 0xFFu];
+        crc = crc32c_table.at(7).at(word & 0xFFu) ^ crc32c_table.at(6).at((word >> 8u) & 0xFFu) ^
+              crc32c_table.at(5).at((word >> 16u) & 0xFFu) ^ crc32c_table.at(4).at((word >> 24u) & 0xFFu) ^
+              crc32c_table.at(3).at((word >> 32u) & 0xFFu) ^ crc32c_table.at(2).at((word >> 40u) & 0xFFu) ^
+              crc32c_table.at(1).at((word >> 48u) & 0xFFu) ^ crc32c_table.at(0).at((word >> 56u) & 0xFFu);
       }
-      for (; index < size; ++index) crc = crc32c_table[0][(crc ^ bytes[index]) & 0xFFu] ^ (crc >> 8);
+      for (; index < size; ++index) crc = crc32c_table.at(0).at((crc ^ bytes[index]) & 0xFFu) ^ (crc >> 8u);
       return crc;
     }
 
@@ -105,38 +105,38 @@ namespace csp
     inline constexpr std::size_t long_block{8192};
     inline constexpr std::size_t short_block{256};
 
-    constexpr std::uint32_t multmodp(std::uint32_t a, std::uint32_t b)
+    constexpr std::uint32_t multmodp(std::uint32_t left, std::uint32_t right)
     {
       std::uint32_t product{};
       for (;;)
       {
-        if (a & 0x80000000u)
+        if (left & 0x80000000u)
         {
-          product ^= b;
-          if ((a & 0x7FFFFFFFu) == 0) break;
+          product ^= right;
+          if ((left & 0x7FFFFFFFu) == 0) break;
         }
-        a <<= 1;
-        b = (b & 1u) ? (b >> 1) ^ crc32c_poly : (b >> 1);
+        left <<= 1u;
+        right = (right & 1u) ? (right >> 1u) ^ crc32c_poly : (right >> 1u);
       }
       return product;
     }
     constexpr std::array<std::array<std::uint32_t, 256>, 4> make_crc32c_zeros(std::size_t length)
     {
-      std::uint32_t op{0x80000000u};
-      std::uint32_t sq{op >> 4};
+      std::uint32_t operation{0x80000000u};
+      std::uint32_t square{operation >> 4u};
       while (length)
       {
-        sq = multmodp(sq, sq);
-        if (length & 1) op = multmodp(sq, op);
-        length >>= 1;
+        square = multmodp(square, square);
+        if (length & 1u) operation = multmodp(square, operation);
+        length >>= 1u;
       }
       std::array<std::array<std::uint32_t, 256>, 4> table{};
-      for (std::uint32_t n{}; n < 256; ++n)
+      for (std::uint32_t index{}; index < 256; ++index)
       {
-        table[0][n] = multmodp(op, n);
-        table[1][n] = multmodp(op, n << 8);
-        table[2][n] = multmodp(op, n << 16);
-        table[3][n] = multmodp(op, n << 24);
+        table.at(0).at(index) = multmodp(operation, index);
+        table.at(1).at(index) = multmodp(operation, index << 8u);
+        table.at(2).at(index) = multmodp(operation, index << 16u);
+        table.at(3).at(index) = multmodp(operation, index << 24u);
       }
       return table;
     }
@@ -145,7 +145,8 @@ namespace csp
     inline std::uint32_t crc32c_shift(const std::array<std::array<std::uint32_t, 256>, 4> &zeros,
                                       const std::uint32_t crc)
     {
-      return zeros[0][crc & 0xFFu] ^ zeros[1][(crc >> 8) & 0xFFu] ^ zeros[2][(crc >> 16) & 0xFFu] ^ zeros[3][crc >> 24];
+      return zeros.at(0).at(crc & 0xFFu) ^ zeros.at(1).at((crc >> 8u) & 0xFFu) ^ zeros.at(2).at((crc >> 16u) & 0xFFu) ^
+             zeros.at(3).at(crc >> 24u);
     }
 
   #if defined(__GNUC__) || defined(__clang__)
@@ -161,13 +162,13 @@ namespace csp
         std::uint64_t crc1{}, crc2{};
         for (std::size_t step{}; step < long_block; step += 8)
         {
-          std::uint64_t a{}, b{}, c{};
-          std::memcpy(&a, bytes + index + step, sizeof(a));
-          std::memcpy(&b, bytes + index + step + long_block, sizeof(b));
-          std::memcpy(&c, bytes + index + step + long_block * 2, sizeof(c));
-          crc0 = _mm_crc32_u64(crc0, a);
-          crc1 = _mm_crc32_u64(crc1, b);
-          crc2 = _mm_crc32_u64(crc2, c);
+          std::uint64_t first{}, second{}, third{};
+          std::memcpy(&first, bytes + index + step, sizeof(first));
+          std::memcpy(&second, bytes + index + step + long_block, sizeof(second));
+          std::memcpy(&third, bytes + index + step + (long_block * 2), sizeof(third));
+          crc0 = _mm_crc32_u64(crc0, first);
+          crc1 = _mm_crc32_u64(crc1, second);
+          crc2 = _mm_crc32_u64(crc2, third);
         }
         crc0 = crc32c_shift(crc32c_zeros_long, static_cast<std::uint32_t>(crc0)) ^ crc1;
         crc0 = crc32c_shift(crc32c_zeros_long, static_cast<std::uint32_t>(crc0)) ^ crc2;
@@ -178,13 +179,13 @@ namespace csp
         std::uint64_t crc1{}, crc2{};
         for (std::size_t step{}; step < short_block; step += 8)
         {
-          std::uint64_t a{}, b{}, c{};
-          std::memcpy(&a, bytes + index + step, sizeof(a));
-          std::memcpy(&b, bytes + index + step + short_block, sizeof(b));
-          std::memcpy(&c, bytes + index + step + short_block * 2, sizeof(c));
-          crc0 = _mm_crc32_u64(crc0, a);
-          crc1 = _mm_crc32_u64(crc1, b);
-          crc2 = _mm_crc32_u64(crc2, c);
+          std::uint64_t first{}, second{}, third{};
+          std::memcpy(&first, bytes + index + step, sizeof(first));
+          std::memcpy(&second, bytes + index + step + short_block, sizeof(second));
+          std::memcpy(&third, bytes + index + step + (short_block * 2), sizeof(third));
+          crc0 = _mm_crc32_u64(crc0, first);
+          crc1 = _mm_crc32_u64(crc1, second);
+          crc2 = _mm_crc32_u64(crc2, third);
         }
         crc0 = crc32c_shift(crc32c_zeros_short, static_cast<std::uint32_t>(crc0)) ^ crc1;
         crc0 = crc32c_shift(crc32c_zeros_short, static_cast<std::uint32_t>(crc0)) ^ crc2;
@@ -204,9 +205,9 @@ namespace csp
     inline bool crc32c_supported()
     {
   #if defined(_MSC_VER)
-      int registers[4]{};
-      __cpuid(registers, 1);
-      return (registers[2] & (1 << 20)) != 0;
+      std::array<int, 4> registers{};
+      __cpuid(registers.data(), 1);
+      return (static_cast<std::uint32_t>(registers.at(2)) & (1u << 20u)) != 0;
   #else
       unsigned int eax{}, ebx{}, ecx{}, edx{};
       if (!__get_cpuid(1u, &eax, &ebx, &ecx, &edx)) return false;
@@ -222,11 +223,11 @@ namespace csp
    (build-time) and mapper (run-time) agree on this layout. Each blob carries its own CRC-32C, so the mapper verifies
    blobs lazily on first access rather than scanning the whole file at start-up.
   */
-  inline constexpr char magic[4]{'C', 'S', 'P', '0'};
+  inline constexpr std::array<char, 4> magic{'C', 'S', 'P', '0'};
   inline constexpr std::uint32_t version{2};
   struct header
   {
-    char magic[4];
+    std::array<char, 4> magic;
     std::uint32_t version;
     std::uint32_t flags;
     std::uint32_t count;
@@ -289,7 +290,7 @@ namespace csp
   inline void write(const pack &container, const std::filesystem::path &file)
   {
     header head{};
-    std::memcpy(head.magic, magic, sizeof(magic));
+    std::memcpy(head.magic.data(), magic.data(), magic.size());
     head.version = version;
     head.flags = 0;
     head.count = static_cast<std::uint32_t>(container.table.size());
@@ -340,6 +341,8 @@ namespace csp
     }
     mapping(const mapping &) = delete;
     mapping &operator=(const mapping &) = delete;
+    mapping(mapping &&) = delete;
+    mapping &operator=(mapping &&) = delete;
 
     void load_directory(const header &head)
     {
@@ -352,7 +355,7 @@ namespace csp
       const std::uint64_t content_end{sizeof(header) + head.size};
       for (std::size_t index{}; index < count; ++index)
       {
-        std::memcpy(&entries[index], table + index * sizeof(entry), sizeof(entry));
+        std::memcpy(&entries[index], table + (index * sizeof(entry)), sizeof(entry));
         const entry &record{entries[index]};
         if (record.offset < sizeof(header) || record.size > head.size || record.offset > content_end - record.size)
           throw std::runtime_error("Csp directory entry is out of bounds");
@@ -377,7 +380,7 @@ namespace csp
         CloseHandle(handle);
         throw std::runtime_error("Failed to map csp file '" + file.string() + "'");
       }
-      void *view{MapViewOfFile(map, FILE_MAP_READ, 0, 0, 0)};
+      const void *view{MapViewOfFile(map, FILE_MAP_READ, 0, 0, 0)};
       CloseHandle(map);
       CloseHandle(handle);
       if (!view) throw std::runtime_error("Failed to view csp file '" + file.string() + "'");
@@ -403,8 +406,8 @@ namespace csp
     const unsigned char *verify(const std::uint64_t offset, const std::uint64_t size)
     {
       const entry *begin{entries};
-      const auto after{std::upper_bound(begin, begin + count, offset, [](std::uint64_t value, const entry &record)
-                                        { return value < record.offset; })};
+      const auto *const after{std::upper_bound(
+        begin, begin + count, offset, [](std::uint64_t value, const entry &record) { return value < record.offset; })};
       if (after == begin) throw std::runtime_error("Csp span is outside any blob");
       const entry *found{after - 1};
       if (size > found->size || offset - found->offset > found->size - size)
@@ -451,13 +454,13 @@ namespace csp
     const unsigned char *base{map.base()};
     if (map.size() < sizeof(header)) throw std::runtime_error("Csp file '" + file.string() + "' is truncated");
     const header &head{*reinterpret_cast<const header *>(base)};
-    if (std::memcmp(head.magic, magic, sizeof(magic)) != 0)
+    if (std::memcmp(head.magic.data(), magic.data(), magic.size()) != 0)
       throw std::runtime_error("Csp file '" + file.string() + "' is not a csp file");
     if (head.version != version)
       throw std::runtime_error("Csp file '" + file.string() + "' has an unsupported version");
     if (head.signature != signature)
       throw std::runtime_error("Csp file '" + file.string() + "' does not match this build");
-    if (map.size() != sizeof(header) + head.size + static_cast<std::size_t>(head.count) * sizeof(entry))
+    if (map.size() != sizeof(header) + head.size + (static_cast<std::size_t>(head.count) * sizeof(entry)))
       throw std::runtime_error("Csp file '" + file.string() + "' has an unexpected size");
     map.load_directory(head);
     return map;
