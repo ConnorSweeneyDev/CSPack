@@ -33979,6 +33979,7 @@ namespace csb
       std::string name{};
       std::pair<unsigned int, unsigned int> range{};
       std::vector<double> times{};
+      std::vector<std::array<double, 2>> pivots{};
       std::vector<std::unordered_map<std::string, std::vector<std::array<double, 4>>>> hitboxes{};
     };
     struct slice
@@ -34006,6 +34007,7 @@ namespace csb
     std::vector<slice> slices{};
     std::vector<glyph> glyphs{};
     bool hitboxes{};
+    bool pivot{};
   };
 
   namespace utility
@@ -34669,6 +34671,7 @@ namespace csb
         bool visible{};
         bool image{};
         bool hitbox{};
+        bool pivot{};
       };
       struct cel_info
       {
@@ -34692,6 +34695,7 @@ namespace csb
       std::string group{};
       bool image_group{};
       bool hitbox_group{};
+      bool pivot_group{};
 
       for (std::uint16_t frame{}; frame < frame_count; ++frame)
       {
@@ -34730,13 +34734,14 @@ namespace csb
             {
               if (kind != 1)
                 throw std::runtime_error("Aseprite top-level layer '" + name +
-                                         "' must be a group ('image' or 'hitbox'): " + file.string());
-              if (name != "image" && name != "hitbox")
+                                         "' must be a group ('image', 'hitbox' or 'pivot'): " + file.string());
+              if (name != "image" && name != "hitbox" && name != "pivot")
                 throw std::runtime_error("Unexpected Aseprite top-level group '" + name +
-                                         "' (only 'image' and 'hitbox' are allowed): " + file.string());
+                                         "' (only 'image', 'hitbox' and 'pivot' are allowed): " + file.string());
               group = name;
               if (name == "image") image_group = true;
               if (name == "hitbox") hitbox_group = true;
+              if (name == "pivot") pivot_group = true;
             }
             else
             {
@@ -34744,8 +34749,11 @@ namespace csb
                 throw std::runtime_error("Aseprite layer '" + name + "' is outside any group: " + file.string());
               if (group == "hitbox" && kind == 1)
                 throw std::runtime_error("Aseprite 'hitbox' group must be flat (no subgroups): " + file.string());
+              if (group == "pivot" && kind == 1)
+                throw std::runtime_error("Aseprite 'pivot' group must be flat (no subgroups): " + file.string());
               info.image = group == "image" && kind != 1;
               info.hitbox = group == "hitbox" && kind != 1;
+              info.pivot = group == "pivot" && kind != 1;
             }
             layers.push_back(info);
           }
@@ -34827,6 +34835,19 @@ namespace csb
                                        "': " + file.string());
       if (std::none_of(layers.begin(), layers.end(), [](const layer_info &layer) { return layer.image; }))
         throw std::runtime_error("Aseprite 'image' group has no layers: " + file.string());
+      std::size_t pivot_layer{layers.size()};
+      if (pivot_group)
+      {
+        std::size_t pivot_layers{};
+        for (std::size_t index{}; index < layers.size(); ++index)
+          if (layers.at(index).pivot)
+          {
+            pivot_layer = index;
+            ++pivot_layers;
+          }
+        if (pivot_layers != 1)
+          throw std::runtime_error("Aseprite 'pivot' group must contain exactly one layer: " + file.string());
+      }
 
       std::vector<cel_info> grid(static_cast<std::size_t>(layers.size()) * frame_count);
       for (const auto &[layer, frame, cel] : raw_cels)
@@ -35060,8 +35081,9 @@ namespace csb
               }
               for (int top{row}; top < bottom; ++top)
                 for (int left{column}; left < right; ++left) cover(left, top) = 1;
-              rectangles.push_back({static_cast<double>(cel.x + column), static_cast<double>(cel.y + row),
-                                    static_cast<double>(cel.x + right), static_cast<double>(cel.y + bottom)});
+              rectangles.push_back(
+                {static_cast<double>(cel.x + column), static_cast<double>(canvas_height - (cel.y + row)),
+                 static_cast<double>(cel.x + right), static_cast<double>(canvas_height - (cel.y + bottom))});
             }
           return rectangles;
         }};
@@ -35116,6 +35138,38 @@ namespace csb
                          sheet.begin() +
                            static_cast<std::ptrdiff_t>(static_cast<std::size_t>(height - 1 - row) * width * 4));
 
+      std::vector<std::array<double, 2>> pivots{};
+      if (pivot_group)
+      {
+        pivots.resize(frame_count);
+        for (std::uint16_t frame{}; frame < frame_count; ++frame)
+        {
+          const cel_info *cel{resolve(pivot_layer, frame)};
+          if (!cel || cel->width == 0 || cel->height == 0)
+            throw std::runtime_error("Aseprite 'pivot' layer must contain exactly one pixel on every frame: " +
+                                     file.string());
+          const std::vector<unsigned char> pixels{decode(*cel)};
+          std::size_t found{};
+          int pivot_x{}, pivot_y{};
+          for (unsigned int row{}; row < cel->height; ++row)
+            for (unsigned int column{}; column < cel->width; ++column)
+              if (pixels.at((((static_cast<std::size_t>(row) * cel->width) + column) * 4) + 3) != 0)
+              {
+                pivot_x = cel->x + static_cast<int>(column);
+                pivot_y = cel->y + static_cast<int>(row);
+                ++found;
+              }
+          if (found != 1)
+            throw std::runtime_error("Aseprite 'pivot' layer must contain exactly one pixel on every frame: " +
+                                     file.string());
+          if (pivot_x < 0 || pivot_y < 0 || std::cmp_greater_equal(pivot_x, frame_width) ||
+              std::cmp_greater_equal(pivot_y, frame_height))
+            throw std::runtime_error("Aseprite pivot pixel must be within the canvas: " + file.string());
+          pivots.at(frame) = {static_cast<double>(pivot_x),
+                              static_cast<double>(frame_height) - 1.0 - static_cast<double>(pivot_y)};
+        }
+      }
+
       aseprite result{};
       result.data.assign(reinterpret_cast<std::byte *>(sheet.data()),
                          reinterpret_cast<std::byte *>(sheet.data()) + sheet.size());
@@ -35125,6 +35179,7 @@ namespace csb
       result.resolution = {frame_width, frame_height};
       result.slices = std::move(slices);
       result.hitboxes = hitbox_group;
+      result.pivot = pivot_group;
       if (!result.slices.empty())
       {
         const auto codepoint{[&file](const std::string &name) -> std::uint64_t
@@ -35187,6 +35242,7 @@ namespace csb
         for (std::uint16_t frame{tag.from}; frame <= tag.to; ++frame)
         {
           animation.times.push_back(durations.at(frame));
+          if (pivot_group) animation.pivots.push_back(pivots.at(frame));
           std::unordered_map<std::string, std::vector<std::array<double, 4>>> hitboxes{};
           for (std::size_t layer{}; layer < layers.size(); ++layer)
           {
@@ -37323,9 +37379,12 @@ namespace csb
            current.frame_width = texture.resolution.first;
            current.frame_height = texture.resolution.second;
            current.animations = texture.animations;
+           if (current.space == "image" && !texture.pivot)
+             throw std::runtime_error("Texture is missing the required 'pivot' group: " + file.string());
            if (current.space == "font")
            {
              if (texture.hitboxes) throw std::runtime_error("Font must not contain a 'hitbox' group: " + file.string());
+             if (texture.pivot) throw std::runtime_error("Font must not contain a 'pivot' group: " + file.string());
              if (texture.glyphs.empty())
                throw std::runtime_error("Font must contain at least one slice: " + file.string());
              current.glyphs = texture.glyphs;
@@ -37439,9 +37498,7 @@ namespace csb
            std::uint64_t size{};
          };
          std::unordered_map<std::filesystem::path, placement> placements{};
-         std::unordered_map<std::filesystem::path,
-                            std::vector<std::tuple<std::uint64_t, std::uint64_t, unsigned int, unsigned int>>>
-           clips{};
+         std::unordered_map<std::filesystem::path, std::vector<std::pair<std::uint64_t, std::uint64_t>>> clips{};
          std::unordered_map<std::filesystem::path, std::pair<std::uint64_t, std::uint64_t>> glyph_spans{};
          std::vector<std::string> packs{};
          for (const auto &[file, name, value] : files)
@@ -37530,12 +37587,22 @@ namespace csb
                  put_f64(frames_blob, right);
                  put_f64(frames_blob, bottom);
                  put_f64(frames_blob, animation.times.at(index));
+                 if (index < animation.pivots.size())
+                 {
+                   put_f64(frames_blob, animation.pivots.at(index).at(0));
+                   put_f64(frames_blob, animation.pivots.at(index).at(1));
+                 }
+                 else
+                 {
+                   put_f64(frames_blob, (static_cast<double>(texture.frame_width) - 1.0) / 2.0);
+                   put_f64(frames_blob, (static_cast<double>(texture.frame_height) - 1.0) / 2.0);
+                 }
                  put_u64(frames_blob, hitbox_count > 0 ? hitbox_index : 0);
                  put_u64(frames_blob, hitbox_count);
                  ++frames_total;
                  ++index;
                }
-               clips.try_emplace(file).first->second.emplace_back(frame_index, frames_total - frame_index, start, end);
+               clips.try_emplace(file).first->second.emplace_back(frame_index, frames_total - frame_index);
              }
              if (texture.space == "font")
              {
@@ -37579,18 +37646,17 @@ namespace csb
            std::ranges::replace(identifier, '.', '_');
            std::ranges::replace(identifier, '-', '_');
            if (debug)
-             loaders +=
-               std::format("  const loader loaded_{}{{\"{}.csp\", {}ull, {}, {}, {}, {}, {}, {}, {}}};\n", identifier,
-                           current_pack, container.signature(), container.table.at(frames_entry).first,
-                           container.table.at(frames_entry).second, container.table.at(hitboxes_entry).first,
-                           container.table.at(hitboxes_entry).second, container.table.at(glyphs_entry).first,
-                           container.table.at(glyphs_entry).second, container.table.at(strings_entry).first);
+             loaders += std::format("  const loader {}{{\"{}.csp\", {}ull, {}, {}, {}, {}, {}, {}, {}}};\n", identifier,
+                                    current_pack, container.signature(), container.table.at(frames_entry).first,
+                                    container.table.at(frames_entry).second, container.table.at(hitboxes_entry).first,
+                                    container.table.at(hitboxes_entry).second, container.table.at(glyphs_entry).first,
+                                    container.table.at(glyphs_entry).second, container.table.at(strings_entry).first);
            else
-             loaders += std::format("  const loader loaded_{}{{\"{}.csp\", {}ull, {}, {}, {}, {}, {}, {}}};\n",
-                                    identifier, current_pack, container.signature(),
-                                    container.table.at(frames_entry).first, container.table.at(frames_entry).second,
-                                    container.table.at(hitboxes_entry).first, container.table.at(hitboxes_entry).second,
-                                    container.table.at(glyphs_entry).first, container.table.at(glyphs_entry).second);
+             loaders += std::format("  const loader {}{{\"{}.csp\", {}ull, {}, {}, {}, {}, {}, {}}};\n", identifier,
+                                    current_pack, container.signature(), container.table.at(frames_entry).first,
+                                    container.table.at(frames_entry).second, container.table.at(hitboxes_entry).first,
+                                    container.table.at(hitboxes_entry).second, container.table.at(glyphs_entry).first,
+                                    container.table.at(glyphs_entry).second);
          }
 
          std::string result{"namespace cse::resource\n{\n" + loaders + "}\n\n"};
@@ -37637,9 +37703,8 @@ namespace csb
              const auto &list{clips.at(file)};
              for (std::size_t index{}; index < list.size(); ++index)
              {
-               const auto &[frame_index, frame_count, start, end]{list.at(index)};
-               block += std::format("{{cse::resource::frames(\"{}\", {}, {}), {}, {}}}", place.key, frame_index,
-                                    frame_count, start, end);
+               const auto &[frame_index, frame_count]{list.at(index)};
+               block += std::format("{{cse::resource::frames(\"{}\", {}, {})}}", place.key, frame_index, frame_count);
                if (index + 1 < list.size()) block += ", ";
              }
              block += "};\n";
@@ -37657,7 +37722,7 @@ namespace csb
              block += std::format("    const detail::{}_hitbox {}\n    {{\n", name, name);
              for (std::size_t index{}; index < names.size(); ++index)
              {
-               block += std::format("      \"{}\"", name + "." + names.at(index));
+               block += std::format("      {{\"{}\"}}", name + "." + names.at(index));
                block += index + 1 < names.size() ? ",\n" : "\n";
              }
              block += "    };\n";
