@@ -28304,7 +28304,6 @@ namespace csd
 #include <algorithm>
 #include <array>
 #include <cctype>
-#include <cmath>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -28322,7 +28321,6 @@ namespace csd
 #include <iostream>
 #include <iterator>
 #include <mutex>
-#include <optional>
 #include <regex>
 #include <span>
 #include <sstream>
